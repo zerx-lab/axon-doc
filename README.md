@@ -1,109 +1,147 @@
 # AxonBase
 
-基于 Next.js 16 + React 19 + Convex（自托管）的全栈应用模板，内置 RBAC 权限管理系统。
+AI-powered knowledge base system with hybrid search and RBAC permission management.
 
-## 技术栈
+Built with Next.js 16 + React 19 + Supabase + pgvector.
 
-- **前端**: Next.js 16, React 19, Tailwind CSS v4, TypeScript 5
-- **后端**: Convex (自托管)
-- **包管理器**: Bun
+## Features
 
-## 快速开始
+- **Knowledge Base Management** - Create and organize knowledge bases with documents
+- **Hybrid Search** - Vector similarity + BM25 keyword search with RRF fusion
+- **Contextual Retrieval** - Anthropic-style contextual chunking for better retrieval
+- **Reranking** - Support for Cohere, Jina, Voyage rerankers
+- **RBAC** - Role-based access control with granular permissions
+- **Background Tasks** - Real-time progress tracking for document processing
+- **Multi-language** - Chinese and English interface
 
-### 1. 安装依赖
+## Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| Framework | Next.js 16, React 19, TypeScript 5 |
+| Database | Supabase (PostgreSQL + pgvector) |
+| Styling | Tailwind CSS v4 |
+| AI SDK | Vercel AI SDK, Anthropic SDK, OpenAI SDK |
+| Package Manager | Bun |
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
 bun install
 ```
 
-### 2. 启动 Convex 后端
-
-进入 Docker 目录并启动服务：
+### 2. Start Supabase
 
 ```bash
-cd Docker
-docker-compose up -d
+cd supabase-docker
+docker compose up -d
 ```
 
-### 3. 配置环境变量
+### 3. Configure Environment
 
-创建 `.env.local` 文件：
+Create `.env.local`:
 
 ```env
-CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210
-CONVEX_URL=http://127.0.0.1:3210
-CONVEX_SELF_HOSTED_ADMIN_KEY=<your-admin-key>
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 ```
 
-### 4. 初始化数据库
+> Keys can be found in `supabase-docker/.env` after running `generate_keys.js`
 
-首次运行需要初始化系统角色和超级管理员账户：
+### 4. Initialize Database
 
 ```bash
-npx convex run auth:seedSuperAdmin
+bun run db:push
 ```
 
-此命令会自动：
-- 创建系统角色（Super Administrator, Administrator, User Manager, Viewer）
-- 创建超级管理员账户
+This will apply migrations and seed data including:
+- System roles (Super Administrator, Administrator, User Manager, Viewer)
+- Default super admin account
 
-**默认超级管理员账户：**
-- 用户名: `clown`
-- 密码: `012359clown`
+**Default Credentials:**
+- Username: `clown`
+- Password: `012359clown`
 
-> 生产环境请务必修改默认密码！
+> Change the default password in production!
 
-### 5. 启动开发服务器
+### 5. Start Development Server
 
 ```bash
 bun run dev
 ```
 
-访问 http://localhost:3000
+Visit http://localhost:3000
 
-## 可用命令
+## Commands
 
-| 命令 | 说明 |
-|------|------|
-| `bun run dev` | 启动开发服务器 |
-| `bun run build` | 生产环境构建 |
-| `bun run start` | 启动生产服务器 |
-| `bun run lint` | 运行 ESLint 检查 |
+| Command | Description |
+|---------|-------------|
+| `bun run dev` | Start development server |
+| `bun run build` | Production build |
+| `bun run start` | Start production server |
+| `bun run lint` | Run ESLint |
 
-## Convex 数据初始化命令
+### Database Commands
 
-| 命令 | 说明 |
-|------|------|
-| `npx convex run auth:seedSuperAdmin` | 初始化角色和超级管理员（推荐） |
-| `npx convex run admin/roles:seedSystemRoles` | 仅初始化系统角色 |
+| Command | Description |
+|---------|-------------|
+| `bun run docker:up` | Start Supabase containers |
+| `bun run docker:down` | Stop Supabase containers |
+| `bun run docker:logs` | View container logs |
+| `bun run db:push` | Apply migrations |
+| `bun run db:reset` | Reset database and reapply migrations |
+| `bun run db:seed` | Run seed data only |
+| `bun run db:psql` | Open PostgreSQL shell |
+| `bun run db:diff` | Generate migration diff |
 
-## 项目结构
+## Project Structure
 
 ```
 axon-base/
-├── app/                  # Next.js App Router 页面
-├── components/           # React 组件
-├── lib/                  # 工具函数和配置
-├── convex/               # Convex 后端
-│   ├── schema.ts         # 数据库模式
-│   ├── auth.ts           # 认证相关函数
-│   ├── admin/            # 管理功能
-│   │   ├── roles.ts      # 角色管理
-│   │   └── users.ts      # 用户管理
-│   └── lib/              # 后端工具
-│       ├── access.ts     # 权限检查
-│       └── permissions.ts # 权限定义
-├── Docker/               # Docker 配置
-└── docs/                 # 文档
+├── app/                      # Next.js App Router
+│   ├── api/                  # API Routes
+│   │   ├── auth/             # Authentication
+│   │   ├── admin/            # Admin (users, roles)
+│   │   ├── kb/               # Knowledge bases
+│   │   ├── documents/        # Document management
+│   │   ├── embeddings/       # Embedding operations
+│   │   └── search/           # Hybrid search
+│   ├── dashboard/            # Dashboard pages
+│   └── login/                # Login page
+├── components/               # React components
+│   └── ui/                   # UI primitives
+├── lib/                      # Utilities
+│   ├── supabase/             # Supabase client & helpers
+│   ├── chunking/             # Text chunking & context
+│   ├── embeddings.ts         # Embedding generation
+│   └── reranker.ts           # Reranking providers
+├── supabase/                 # Database
+│   ├── migrations/           # SQL migrations
+│   └── seed.sql              # Seed data
+└── supabase-docker/          # Docker setup
 ```
 
-## 内置功能
+## Permissions
 
-- 用户认证（登录/登出/会话管理）
-- RBAC 权限管理
-- 用户管理（CRUD）
-- 角色管理（CRUD）
-- 多语言支持（中文/英文）
+| Permission | Description |
+|------------|-------------|
+| `users:*` | User management (list, create, update, delete, toggle_active, reset_password) |
+| `roles:*` | Role management (list, create, update, delete) |
+| `kb:*` | Knowledge base operations |
+| `docs:*` | Document operations |
+| `embedding:*` | Embedding operations (view, manage, search) |
+| `system:*` | System settings and logs |
+
+## AI Configuration
+
+Configure AI providers in Settings page:
+
+- **Embedding Models**: OpenAI, Voyage, local compatible APIs
+- **Chat Models**: Anthropic Claude, OpenAI GPT, compatible APIs
+- **Rerankers**: Cohere, Jina, Voyage
 
 ## License
 
