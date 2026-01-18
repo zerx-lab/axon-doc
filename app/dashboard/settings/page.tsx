@@ -16,6 +16,7 @@ interface EmbeddingConfig {
   batchSize: number;
   chunkSize: number;
   chunkOverlap: number;
+  contextEnabled: boolean;
 }
 
 type ChatProvider = "openai" | "anthropic" | "openai-compatible";
@@ -36,8 +37,9 @@ const DEFAULT_CONFIG: EmbeddingConfig = {
   model: "text-embedding-3-small",
   dimensions: 1536,
   batchSize: 100,
-  chunkSize: 512,
-  chunkOverlap: 100,
+  chunkSize: 400,
+  chunkOverlap: 60,
+  contextEnabled: false,
 };
 
 const PROVIDER_PRESETS: Record<string, Partial<EmbeddingConfig>> = {
@@ -120,6 +122,21 @@ export default function SettingsPage() {
     usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   } | null>(null);
   const [chatTestError, setChatTestError] = useState<string | null>(null);
+
+  const [recallQuery, setRecallQuery] = useState("");
+  const [candidates, setCandidates] = useState<string[]>(["", ""]);
+  const [recallTesting, setRecallTesting] = useState(false);
+  const [recallResult, setRecallResult] = useState<{
+    query: string;
+    responseTime: number;
+    dimensions: number;
+    results: Array<{
+      index: number;
+      text: string;
+      similarity: number;
+    }>;
+  } | null>(null);
+  const [recallError, setRecallError] = useState<string | null>(null);
 
   const permissions = user?.permissions || [];
   const canEditSettings = permissions.includes(PERMISSIONS.SYSTEM_SETTINGS) || permissions.includes("*");
@@ -311,6 +328,58 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRecallTest = async () => {
+    const validCandidates = candidates.filter(c => c.trim());
+    if (!user?.id || !recallQuery.trim() || validCandidates.length === 0) return;
+    
+    setRecallTesting(true);
+    setRecallResult(null);
+    setRecallError(null);
+    
+    try {
+      const response = await fetch("/api/embeddings/recall-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operatorId: user.id,
+          query: recallQuery.trim(),
+          candidates: validCandidates,
+          config: embeddingConfig,
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setRecallResult(result.result);
+      } else {
+        setRecallError(result.error || t("settings.recallTestFailed"));
+      }
+    } catch {
+      setRecallError(t("settings.recallTestFailed"));
+    } finally {
+      setRecallTesting(false);
+    }
+  };
+
+  const handleAddCandidate = () => {
+    if (candidates.length < 20) {
+      setCandidates([...candidates, ""]);
+    }
+  };
+
+  const handleRemoveCandidate = (index: number) => {
+    if (candidates.length > 1) {
+      setCandidates(candidates.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleCandidateChange = (index: number, value: string) => {
+    const newCandidates = [...candidates];
+    newCandidates[index] = value;
+    setCandidates(newCandidates);
+  };
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -453,7 +522,7 @@ export default function SettingsPage() {
                     <Input
                       type="number"
                       value={embeddingConfig.chunkSize}
-                      onChange={(e) => setEmbeddingConfig(prev => ({ ...prev, chunkSize: parseInt(e.target.value) || 512 }))}
+                      onChange={(e) => setEmbeddingConfig(prev => ({ ...prev, chunkSize: parseInt(e.target.value) || 400 }))}
                       min={64}
                       max={8192}
                     />
@@ -465,11 +534,43 @@ export default function SettingsPage() {
                     <Input
                       type="number"
                       value={embeddingConfig.chunkOverlap}
-                      onChange={(e) => setEmbeddingConfig(prev => ({ ...prev, chunkOverlap: parseInt(e.target.value) || 100 }))}
+                      onChange={(e) => setEmbeddingConfig(prev => ({ ...prev, chunkOverlap: parseInt(e.target.value) || 60 }))}
                       min={0}
                       max={1024}
                     />
                   </div>
+                </div>
+
+                <div className="border-t border-border pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block font-mono text-xs text-foreground">
+                        {t("settings.contextualRetrieval")}
+                      </label>
+                      <p className="mt-1 font-mono text-[10px] text-muted">
+                        {t("settings.contextualRetrievalDesc")}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setEmbeddingConfig(prev => ({ ...prev, contextEnabled: !prev.contextEnabled }))}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        embeddingConfig.contextEnabled ? "bg-green-500" : "bg-muted/30"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                          embeddingConfig.contextEnabled ? "left-[22px]" : "left-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {embeddingConfig.contextEnabled && (
+                    <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/5 p-3">
+                      <p className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                        {t("settings.contextualRetrievalNote")}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-border pt-6">
@@ -521,6 +622,116 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="border-t border-border pt-6">
+                  <div className="mb-4">
+                    <label className="mb-1 block font-mono text-xs text-muted">
+                      {t("settings.recallTest")}
+                    </label>
+                    <p className="font-mono text-[10px] text-muted/70">
+                      {t("settings.recallTestDesc")}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="mb-2 block font-mono text-xs text-muted">
+                        {t("settings.recallQuery")}
+                      </label>
+                      <Input
+                        value={recallQuery}
+                        onChange={(e) => setRecallQuery(e.target.value)}
+                        placeholder={t("settings.recallQueryPlaceholder")}
+                      />
+                    </div>
+                    
+                    <div>
+                      <div className="mb-2 flex items-center justify-between">
+                        <label className="font-mono text-xs text-muted">
+                          {t("settings.candidateTexts")}
+                        </label>
+                        <Button
+                          onClick={handleAddCandidate}
+                          variant="ghost"
+                          disabled={candidates.length >= 20}
+                          className="h-6 px-2 text-[10px]"
+                        >
+                          + {t("settings.addCandidate")}
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {candidates.map((candidate, index) => (
+                          <div key={index} className="flex gap-2">
+                            <div className="flex h-10 w-6 shrink-0 items-center justify-center font-mono text-[10px] text-muted">
+                              {index + 1}
+                            </div>
+                            <Input
+                              value={candidate}
+                              onChange={(e) => handleCandidateChange(index, e.target.value)}
+                              placeholder={t("settings.candidatePlaceholder")}
+                              className="flex-1"
+                            />
+                            <Button
+                              onClick={() => handleRemoveCandidate(index)}
+                              variant="ghost"
+                              disabled={candidates.length <= 1}
+                              className="h-10 w-10 shrink-0 p-0 text-muted hover:text-red-500"
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end">
+                      <Button 
+                        onClick={handleRecallTest} 
+                        disabled={recallTesting || !recallQuery.trim() || candidates.filter(c => c.trim()).length === 0}
+                        variant="secondary"
+                      >
+                        {recallTesting ? t("settings.recallTesting") : t("settings.testRecall")}
+                      </Button>
+                    </div>
+                    
+                    {recallError && (
+                      <div className="font-mono text-xs text-red-500">
+                        {recallError}
+                      </div>
+                    )}
+                    
+                    {recallResult && (
+                      <div className="space-y-3 rounded border border-green-500/30 bg-green-500/5 p-4">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs text-green-500">
+                            {t("settings.recallTestSuccess")}
+                          </span>
+                          <span className="font-mono text-[10px] text-muted">
+                            {recallResult.responseTime}ms · {recallResult.dimensions} dims
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          {recallResult.results.map((item, index) => (
+                            <div key={index} className="flex items-start gap-3 rounded border border-border bg-background p-3">
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/20 font-mono text-[10px] font-medium">
+                                {index + 1}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="break-words font-mono text-xs">
+                                  {item.text}
+                                </div>
+                              </div>
+                              <div className="shrink-0 rounded bg-green-500/20 px-2 py-0.5 font-mono text-[10px] text-green-500">
+                                {item.similarity.toFixed(1)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {message && (

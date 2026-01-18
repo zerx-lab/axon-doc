@@ -20,6 +20,7 @@
     "@ai-sdk/anthropic": "^3.0.15",
     "@ai-sdk/openai": "^3.0.12",
     "@ai-sdk/openai-compatible": "^2.0.13",
+    "@anthropic-ai/sdk": "^0.71.2",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.90.1",

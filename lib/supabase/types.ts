@@ -244,8 +244,11 @@ export interface Database {
           id: string;
           document_id: string;
           chunk_index: number;
-          content: string;
+          original_content: string;
+          context_summary: string | null;
+          contextualized_content: string;
           content_hash: string;
+          context_hash: string | null;
           token_count: number;
           embedding: number[] | null;
           created_at: string;
@@ -254,8 +257,11 @@ export interface Database {
           id?: string;
           document_id: string;
           chunk_index: number;
-          content: string;
+          original_content: string;
+          context_summary?: string | null;
+          contextualized_content: string;
           content_hash: string;
+          context_hash?: string | null;
           token_count?: number;
           embedding?: number[] | null;
           created_at?: string;
@@ -264,8 +270,11 @@ export interface Database {
           id?: string;
           document_id?: string;
           chunk_index?: number;
-          content?: string;
+          original_content?: string;
+          context_summary?: string | null;
+          contextualized_content?: string;
           content_hash?: string;
+          context_hash?: string | null;
           token_count?: number;
           embedding?: number[] | null;
           created_at?: string;
@@ -358,6 +367,7 @@ export interface EmbeddingConfig {
   batchSize: number;
   chunkSize: number;
   chunkOverlap: number;
+  contextEnabled?: boolean;
 }
 
 export type ChatProvider = "openai" | "anthropic" | "openai-compatible";
@@ -399,6 +409,33 @@ export interface SimilarChunk {
   document_id: string;
   document_title: string;
   chunk_content: string;
+  chunk_context?: string;
   chunk_index: number;
   similarity: number;
+}
+
+export interface ContextConfig {
+  enabled: boolean;
+  maxDocumentTokens: number;
+}
+
+export interface ChunkingConfig {
+  strategy: "recursive" | "semantic" | "fixed";
+  chunkSize: number;
+  chunkOverlap: number;
+  separators?: string[];
+}
+
+export interface DocumentChunkExtended {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  original_content: string;
+  context_summary: string | null;
+  contextualized_content: string;
+  content_hash: string;
+  token_count: number;
+  embedding: number[] | null;
+  context_hash: string | null;
+  created_at: string;
 }

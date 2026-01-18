@@ -1,17 +1,35 @@
 import OpenAI from "openai";
-import type { EmbeddingConfig, SimilarChunk } from "@/lib/supabase/types";
+import type { EmbeddingConfig, SimilarChunk, KnowledgeBaseSettings, ChatConfig } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { RecursiveCharacterSplitter, computeContentHash } from "@/lib/chunking";
+import { ContextGenerator } from "@/lib/chunking";
 
 const DEFAULT_EMBEDDING_CONFIG: EmbeddingConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
   model: "text-embedding-3-small",
-  dimensions: 1536,
+  dimensions: 0,
   batchSize: 100,
-  chunkSize: 512,
-  chunkOverlap: 100,
+  chunkSize: 400,
+  chunkOverlap: 60,
+  contextEnabled: false,
 };
+
+export function getEmbeddingSettings(
+  kbSettings: KnowledgeBaseSettings | null
+): EmbeddingConfig {
+  if (!kbSettings?.embedding) {
+    return DEFAULT_EMBEDDING_CONFIG;
+  }
+  return {
+    ...DEFAULT_EMBEDDING_CONFIG,
+    model: kbSettings.embedding.model || DEFAULT_EMBEDDING_CONFIG.model,
+    dimensions: kbSettings.embedding.dimensions || DEFAULT_EMBEDDING_CONFIG.dimensions,
+    chunkSize: kbSettings.embedding.chunkSize || DEFAULT_EMBEDDING_CONFIG.chunkSize,
+    chunkOverlap: kbSettings.embedding.chunkOverlap || DEFAULT_EMBEDDING_CONFIG.chunkOverlap,
+  };
+}
 
 export async function getEmbeddingConfig(
   supabase: SupabaseClient
@@ -32,89 +50,40 @@ export async function getEmbeddingConfig(
   return DEFAULT_EMBEDDING_CONFIG;
 }
 
-function computeChunkHash(content: string): string {
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0");
-}
+export async function getChatConfig(
+  supabase: SupabaseClient
+): Promise<ChatConfig | null> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "chat_config")
+      .single();
 
-function estimateTokenCount(text: string): number {
-  const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
-  const otherChars = text.replace(/[\u4e00-\u9fa5]/g, "").length;
-  return Math.ceil(chineseChars * 1.5 + otherChars / 4);
+    if (data?.value) {
+      return data.value as ChatConfig;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 export function chunkDocument(
   content: string,
-  chunkSize: number = 512,
-  chunkOverlap: number = 100
+  chunkSize: number = 400,
+  chunkOverlap: number = 60
 ): Array<{ content: string; tokenCount: number; contentHash: string }> {
-  if (!content || content.trim().length === 0) {
-    return [];
-  }
-
-  const separators = ["\n\n", "\n", ". ", "。", " "];
-  const chunks: Array<{ content: string; tokenCount: number; contentHash: string }> = [];
+  const splitter = new RecursiveCharacterSplitter({
+    chunkSize,
+    chunkOverlap,
+  });
   
-  let remainingText = content.trim();
-  let currentChunk = "";
-  let currentTokens = 0;
-
-  while (remainingText.length > 0) {
-    let splitPoint = -1;
-
-    const targetLength = Math.min(chunkSize * 4, remainingText.length);
-    const searchText = remainingText.substring(0, targetLength);
-
-    for (const sep of separators) {
-      const lastIndex = searchText.lastIndexOf(sep);
-      if (lastIndex > 0 && lastIndex > splitPoint) {
-        const potentialChunk = currentChunk + remainingText.substring(0, lastIndex + sep.length);
-        const potentialTokens = estimateTokenCount(potentialChunk);
-        
-        if (potentialTokens <= chunkSize) {
-          splitPoint = lastIndex + sep.length;
-        } else if (splitPoint === -1 && currentChunk.length === 0) {
-          splitPoint = lastIndex + sep.length;
-          break;
-        }
-      }
-    }
-
-    if (splitPoint === -1) {
-      splitPoint = Math.min(chunkSize * 4, remainingText.length);
-    }
-
-    const textToAdd = remainingText.substring(0, splitPoint);
-    currentChunk += textToAdd;
-    currentTokens = estimateTokenCount(currentChunk);
-    remainingText = remainingText.substring(splitPoint);
-
-    if (currentTokens >= chunkSize || remainingText.length === 0) {
-      if (currentChunk.trim().length > 0) {
-        chunks.push({
-          content: currentChunk.trim(),
-          tokenCount: currentTokens,
-          contentHash: computeChunkHash(currentChunk.trim()),
-        });
-      }
-
-      if (chunkOverlap > 0 && remainingText.length > 0) {
-        const overlapText = currentChunk.slice(-chunkOverlap * 4);
-        currentChunk = overlapText;
-        currentTokens = estimateTokenCount(currentChunk);
-      } else {
-        currentChunk = "";
-        currentTokens = 0;
-      }
-    }
-  }
-
-  return chunks;
+  return splitter.split(content).map(chunk => ({
+    content: chunk.content,
+    tokenCount: chunk.tokenCount,
+    contentHash: chunk.contentHash,
+  }));
 }
 
 interface AliyunEmbeddingResponse {
@@ -260,11 +229,41 @@ export async function getEmbeddingStats(
   };
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error === "object" && error !== null) {
+    const err = error as Record<string, unknown>;
+    if (typeof err.message === "string") return err.message;
+    if (typeof err.details === "string") return err.details;
+    if (typeof err.error === "object" && err.error !== null) {
+      const inner = err.error as Record<string, unknown>;
+      if (typeof inner.message === "string") return inner.message;
+    }
+    return JSON.stringify(error);
+  }
+  return "Unknown error occurred";
+}
+
+interface ChunkData {
+  originalContent: string;
+  contextSummary: string | null;
+  contextualizedContent: string;
+  contentHash: string;
+  contextHash: string | null;
+  tokenCount: number;
+}
+
 export async function embedDocument(
   supabase: SupabaseClient,
   documentId: string,
   content: string,
-  config?: EmbeddingConfig
+  config?: EmbeddingConfig,
+  documentTitle?: string
 ): Promise<{ success: boolean; chunkCount: number; error?: string }> {
   try {
     const embeddingConfig = config || await getEmbeddingConfig(supabase);
@@ -274,14 +273,14 @@ export async function embedDocument(
       .update({ embedding_status: "processing" })
       .eq("id", documentId);
 
-    await supabase
-      .from("document_chunks")
-      .delete()
-      .eq("document_id", documentId);
-
-    const chunks = chunkDocument(content, embeddingConfig.chunkSize, embeddingConfig.chunkOverlap);
+    const splitter = new RecursiveCharacterSplitter({
+      chunkSize: embeddingConfig.chunkSize,
+      chunkOverlap: embeddingConfig.chunkOverlap,
+    });
     
-    if (chunks.length === 0) {
+    const rawChunks = splitter.split(content);
+    
+    if (rawChunks.length === 0) {
       await supabase
         .from("documents")
         .update({ embedding_status: "completed" })
@@ -289,31 +288,80 @@ export async function embedDocument(
       return { success: true, chunkCount: 0 };
     }
 
-    const chunkContents = chunks.map((c) => c.content);
-    const embeddings = await generateEmbeddings(chunkContents, embeddingConfig);
+    let chunkDataList: ChunkData[];
 
-    const chunkRecords = chunks.map((chunk, index) => ({
+    if (embeddingConfig.contextEnabled) {
+      const chatConfig = await getChatConfig(supabase);
+      
+      if (!chatConfig || !chatConfig.apiKey) {
+        throw new Error("Chat model not configured. Please configure it in Settings to enable contextual retrieval.");
+      }
+
+      const contextGenerator = new ContextGenerator(chatConfig, 8000);
+      const contextResults = await contextGenerator.generateContextBatch(
+        content,
+        rawChunks.map(c => c.content),
+        documentTitle
+      );
+
+      chunkDataList = contextResults.map((result, index) => ({
+        originalContent: result.original,
+        contextSummary: result.context || null,
+        contextualizedContent: result.contextualized,
+        contentHash: rawChunks[index].contentHash,
+        contextHash: result.context ? computeContentHash(result.context) : null,
+        tokenCount: rawChunks[index].tokenCount,
+      }));
+    } else {
+      chunkDataList = rawChunks.map(chunk => ({
+        originalContent: chunk.content,
+        contextSummary: null,
+        contextualizedContent: chunk.content,
+        contentHash: chunk.contentHash,
+        contextHash: null,
+        tokenCount: chunk.tokenCount,
+      }));
+    }
+
+    const textsToEmbed = chunkDataList.map(c => c.contextualizedContent);
+    const embeddings = await generateEmbeddings(textsToEmbed, embeddingConfig);
+
+    const chunkRecords = chunkDataList.map((chunk, index) => ({
       document_id: documentId,
       chunk_index: index,
-      content: chunk.content,
+      original_content: chunk.originalContent,
+      context_summary: chunk.contextSummary,
+      contextualized_content: chunk.contextualizedContent,
       content_hash: chunk.contentHash,
+      context_hash: chunk.contextHash,
       token_count: chunk.tokenCount,
       embedding: embeddings[index],
     }));
 
-    const { error: insertError } = await supabase
+    const { error: upsertError } = await supabase
       .from("document_chunks")
-      .insert(chunkRecords);
+      .upsert(chunkRecords, { 
+        onConflict: "document_id,chunk_index",
+        ignoreDuplicates: false 
+      });
 
-    if (insertError) throw insertError;
+    if (upsertError) throw upsertError;
+
+    await supabase
+      .from("document_chunks")
+      .delete()
+      .eq("document_id", documentId)
+      .gte("chunk_index", chunkDataList.length);
 
     await supabase
       .from("documents")
       .update({ embedding_status: "completed" })
       .eq("id", documentId);
 
-    return { success: true, chunkCount: chunks.length };
+    return { success: true, chunkCount: chunkDataList.length };
   } catch (error) {
+    console.error("embedDocument error:", error);
+    
     await supabase
       .from("documents")
       .update({ embedding_status: "failed" })
@@ -322,7 +370,7 @@ export async function embedDocument(
     return {
       success: false,
       chunkCount: 0,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: extractErrorMessage(error),
     };
   }
 }
@@ -346,7 +394,7 @@ export async function deleteDocumentEmbeddings(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: extractErrorMessage(error),
     };
   }
 }
@@ -361,7 +409,7 @@ export async function embedKnowledgeBase(
     
     const { data: documents, error: fetchError } = await supabase
       .from("documents")
-      .select("id, content")
+      .select("id, content, title")
       .eq("kb_id", kbId)
       .in("embedding_status", ["pending", "outdated", "failed"]);
 
@@ -374,7 +422,13 @@ export async function embedKnowledgeBase(
     let failed = 0;
 
     for (const doc of documents) {
-      const result = await embedDocument(supabase, doc.id, doc.content || "", embeddingConfig);
+      const result = await embedDocument(
+        supabase, 
+        doc.id, 
+        doc.content || "", 
+        embeddingConfig,
+        doc.title
+      );
       
       if (result.success) {
         processed++;
@@ -393,7 +447,7 @@ export async function embedKnowledgeBase(
       success: false,
       processed: 0,
       failed: 0,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: extractErrorMessage(error),
     };
   }
 }
@@ -426,7 +480,7 @@ export async function deleteKnowledgeBaseEmbeddings(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: extractErrorMessage(error),
     };
   }
 }

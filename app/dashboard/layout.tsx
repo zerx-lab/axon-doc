@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { useAuth, type User } from "@/lib/auth-context";
+import { TaskProvider } from "@/lib/task-context";
+import { TaskPanel } from "@/components/TaskPanel";
 
 interface DashboardLayoutProps {
   readonly children: ReactNode;
@@ -60,90 +62,94 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   } : null;
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside
-        className={`fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-background transition-all duration-300 ${
-          sidebarCollapsed ? "w-16" : "w-64"
-        }`}
-      >
-        {/* Logo */}
-        <div className="group/header relative flex h-16 items-center border-b border-border px-4">
-          {sidebarCollapsed ? (
-            <>
-              {/* Collapsed: Logo centered, chevron on hover */}
-              <Link
-                href="/dashboard"
-                className="flex h-8 w-8 items-center justify-center border border-border"
-              >
-                <span className="font-mono text-xs font-medium">Ax</span>
-              </Link>
-              <button
-                onClick={() => setSidebarCollapsed(false)}
-                className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 transition-opacity group-hover/header:opacity-100"
-              >
-                <ChevronIcon collapsed={true} />
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Expanded: Logo + text + chevron */}
-              <Link href="/dashboard" className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center border border-border">
+    <TaskProvider>
+      <div className="flex min-h-screen bg-background">
+        {/* Sidebar */}
+        <aside
+          className={`fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-background transition-all duration-300 ${
+            sidebarCollapsed ? "w-16" : "w-64"
+          }`}
+        >
+          {/* Logo */}
+          <div className="group/header relative flex h-16 items-center border-b border-border px-4">
+            {sidebarCollapsed ? (
+              <>
+                {/* Collapsed: Logo centered, chevron on hover */}
+                <Link
+                  href="/dashboard"
+                  className="flex h-8 w-8 items-center justify-center border border-border"
+                >
                   <span className="font-mono text-xs font-medium">Ax</span>
-                </div>
-                <span className="font-mono text-[10px] font-medium uppercase tracking-[0.2em]">
-                  AxonBase
-                </span>
-              </Link>
-              <button
-                onClick={() => setSidebarCollapsed(true)}
-                className="ml-auto flex h-6 w-6 items-center justify-center text-muted transition-colors hover:text-foreground"
-              >
-                <ChevronIcon collapsed={false} />
-              </button>
-            </>
-          )}
-        </div>
+                </Link>
+                <button
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 transition-opacity group-hover/header:opacity-100"
+                >
+                  <ChevronIcon collapsed={true} />
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Expanded: Logo + text + chevron */}
+                <Link href="/dashboard" className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center border border-border">
+                    <span className="font-mono text-xs font-medium">Ax</span>
+                  </div>
+                  <span className="font-mono text-[10px] font-medium uppercase tracking-[0.2em]">
+                    AxonBase
+                  </span>
+                </Link>
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="ml-auto flex h-6 w-6 items-center justify-center text-muted transition-colors hover:text-foreground"
+                >
+                  <ChevronIcon collapsed={false} />
+                </button>
+              </>
+            )}
+          </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4">
-          <ul className="space-y-1">
-            {navigationItems.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <li key={item.key}>
-                  <Link
-                    href={item.href}
-                    className={`group flex h-10 items-center gap-3 px-3 font-mono text-xs transition-colors ${
-                      isActive
-                        ? "bg-foreground text-background"
-                        : "text-muted hover:bg-card hover:text-foreground"
-                    }`}
-                  >
-                    <item.icon className="h-4 w-4 flex-shrink-0" />
-                    {!sidebarCollapsed && (
-                      <span className="uppercase tracking-wider">{t(item.key)}</span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-4">
+            <ul className="space-y-1">
+              {navigationItems.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <li key={item.key}>
+                    <Link
+                      href={item.href}
+                      className={`group flex h-10 items-center gap-3 px-3 font-mono text-xs transition-colors ${
+                        isActive
+                          ? "bg-foreground text-background"
+                          : "text-muted hover:bg-card hover:text-foreground"
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4 flex-shrink-0" />
+                      {!sidebarCollapsed && (
+                        <span className="uppercase tracking-wider">{t(item.key)}</span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
 
-      </aside>
+        </aside>
 
-      {/* Main content */}
-      <main
-        className={`flex min-h-screen flex-1 flex-col transition-all duration-300 ${
-          sidebarCollapsed ? "ml-16" : "ml-64"
-        }`}
-      >
-        <DashboardHeader user={headerUser} onLogout={handleLogout} />
-        <div className="flex-1">{children}</div>
-      </main>
-    </div>
+        {/* Main content */}
+        <main
+          className={`flex min-h-screen flex-1 flex-col transition-all duration-300 ${
+            sidebarCollapsed ? "ml-16" : "ml-64"
+          }`}
+        >
+          <DashboardHeader user={headerUser} onLogout={handleLogout} />
+          <div className="flex-1">{children}</div>
+        </main>
+
+        <TaskPanel />
+      </div>
+    </TaskProvider>
   );
 }
 

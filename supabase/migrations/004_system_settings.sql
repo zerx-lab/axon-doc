@@ -35,7 +35,6 @@ INSERT INTO system_settings (key, value, description) VALUES
         "baseUrl": "https://api.openai.com/v1",
         "apiKey": "",
         "model": "text-embedding-3-small",
-        "dimensions": 1536,
         "batchSize": 100,
         "chunkSize": 512,
         "chunkOverlap": 100

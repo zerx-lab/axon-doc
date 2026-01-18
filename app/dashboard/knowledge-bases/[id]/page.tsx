@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
+import { useTask } from "@/lib/task-context";
 import { Button, Input, Dialog, MarkdownEditor } from "@/components/ui";
 import { useRouter, useParams } from "next/navigation";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -25,7 +26,26 @@ interface KnowledgeBase {
   description: string | null;
 }
 
-type DialogType = "create" | "edit" | "delete" | "preview" | null;
+type DialogType = "create" | "edit" | "delete" | "preview" | "test" | null;
+
+interface ChunkResult {
+  chunkId: string;
+  chunkIndex: number;
+  content: string;
+  similarity: number;
+}
+
+interface TestResult {
+  query: string;
+  chunks: ChunkResult[];
+  answer: string;
+  documentTitle: string;
+  responseTime?: number;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+}
 
 export default function DocumentsPage() {
   const { t } = useI18n();
@@ -33,6 +53,9 @@ export default function DocumentsPage() {
   const router = useRouter();
   const params = useParams();
   const kbId = params.id as string;
+  
+  const { addTask, tasks } = useTask();
+  const prevTasksRef = useRef<typeof tasks>([]);
   
   const canListDocs = hasPermission(PERMISSIONS.DOCS_LIST);
   const canCreateDoc = hasPermission(PERMISSIONS.DOCS_CREATE);
@@ -55,6 +78,11 @@ export default function DocumentsPage() {
     content: "",
   });
   const [formError, setFormError] = useState("");
+
+  const [testQuery, setTestQuery] = useState("");
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [streamingAnswer, setStreamingAnswer] = useState("");
 
   const currentUserId = authUser?.id;
 
@@ -110,6 +138,24 @@ export default function DocumentsPage() {
     fetchKnowledgeBase();
     fetchDocuments();
   }, [fetchKnowledgeBase, fetchDocuments]);
+
+  useEffect(() => {
+    const prevTasks = prevTasksRef.current;
+    const relevantTaskCompleted = tasks.some((task) => {
+      const prevTask = prevTasks.find((t) => t.id === task.id);
+      const wasRunningOrPending = prevTask && (prevTask.status === "running" || prevTask.status === "pending");
+      const isNowCompleted = task.status === "completed" || task.status === "failed";
+      const isRelevant = task.type === "embed_document" && task.data.docId && 
+        documents.some((d) => d.id === task.data.docId);
+      return wasRunningOrPending && isNowCompleted && isRelevant;
+    });
+
+    if (relevantTaskCompleted) {
+      fetchDocuments();
+    }
+
+    prevTasksRef.current = tasks;
+  }, [tasks, documents, fetchDocuments]);
   
   useEffect(() => {
     if (!authLoading && !authUser) {
@@ -197,6 +243,117 @@ export default function DocumentsPage() {
     setDialogType(null);
     setSelectedDoc(null);
     setFormError("");
+    setTestQuery("");
+    setTestResult(null);
+    setStreamingAnswer("");
+  };
+
+  const openTestDialog = (doc: Document) => {
+    setSelectedDoc(doc);
+    setTestQuery("");
+    setTestResult(null);
+    setDialogType("test");
+  };
+
+  const handleTest = async () => {
+    if (!currentUserId || !selectedDoc || !testQuery.trim()) return;
+
+    setTestLoading(true);
+    setTestResult(null);
+    setStreamingAnswer("");
+    setFormError("");
+
+    try {
+      const response = await fetch("/api/documents/test/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operatorId: currentUserId,
+          docId: selectedDoc.id,
+          query: testQuery.trim(),
+          limit: 5,
+          threshold: 0.5,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        setFormError(errorData.error || t("docTest.testFailed"));
+        setTestLoading(false);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setFormError(t("docTest.testFailed"));
+        setTestLoading(false);
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullAnswer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          const eventMatch = line.match(/^event: (\w+)/);
+          const dataMatch = line.match(/data: (.+)$/m);
+
+          if (eventMatch && dataMatch) {
+            const eventType = eventMatch[1];
+            const eventData = JSON.parse(dataMatch[1]);
+
+            switch (eventType) {
+              case "metadata":
+                setTestResult({
+                  query: eventData.query,
+                  documentTitle: eventData.documentTitle,
+                  chunks: eventData.chunks,
+                  answer: "",
+                });
+                break;
+
+              case "text":
+                fullAnswer += eventData.content;
+                setStreamingAnswer(fullAnswer);
+                break;
+
+              case "done":
+                setTestResult((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        answer: fullAnswer,
+                        responseTime: eventData.responseTime,
+                        usage: eventData.usage,
+                      }
+                    : null
+                );
+                setStreamingAnswer("");
+                setTestLoading(false);
+                break;
+
+              case "error":
+                setFormError(eventData.message || t("docTest.testFailed"));
+                setTestLoading(false);
+                break;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t("docTest.testFailed"));
+      setTestLoading(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -300,36 +457,20 @@ export default function DocumentsPage() {
     router.push("/dashboard/knowledge-bases");
   };
 
-  const handleEmbed = async (docId: string) => {
+  const handleEmbed = (docId: string) => {
     if (!currentUserId) return;
 
-    setEmbeddingLoading(prev => new Map(prev).set(docId, true));
-    try {
-      const response = await fetch("/api/embeddings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          operatorId: currentUserId,
-          action: "embed_document",
-          docId: docId,
-        }),
-      });
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc) return;
 
-      const result = await response.json();
-      if (result.success) {
-        fetchDocuments();
-      } else {
-        setFormError(result.error || t("embedding.embedFailed"));
-      }
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : t("embedding.embedFailed"));
-    } finally {
-      setEmbeddingLoading(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(docId);
-        return newMap;
-      });
-    }
+    addTask({
+      type: "embed_document",
+      title: `${t("task.embedDocument")}: ${doc.title}`,
+      data: {
+        docId,
+        operatorId: currentUserId,
+      },
+    });
   };
 
   const handleDeleteEmbedding = async (docId: string) => {
@@ -498,6 +639,15 @@ export default function DocumentsPage() {
                     title={t("common.delete")}
                   >
                     <TrashIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {doc.embeddingStatus === "completed" && (
+                  <button
+                    onClick={() => openTestDialog(doc)}
+                    className="flex h-7 w-7 items-center justify-center text-muted hover:text-purple-500"
+                    title={t("docTest.test")}
+                  >
+                    <ChatIcon className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {canManageEmbedding && (
@@ -669,6 +819,138 @@ export default function DocumentsPage() {
           </div>
         </div>
       </Dialog>
+
+      <Dialog
+        open={dialogType === "test"}
+        onClose={closeDialog}
+        title={`${t("docTest.test")}: ${selectedDoc?.title || ""}`}
+        size="xl"
+        footer={
+          <Button onClick={closeDialog}>
+            {t("common.close")}
+          </Button>
+        }
+      >
+        <div className="flex h-[70vh] flex-col gap-4">
+          <div className="flex gap-2 shrink-0">
+            <Input
+              placeholder={t("docTest.queryPlaceholder")}
+              value={testQuery}
+              onChange={(e) => setTestQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleTest();
+                }
+              }}
+              className="flex-1"
+            />
+            <Button onClick={handleTest} loading={testLoading} disabled={!testQuery.trim()}>
+              {testLoading ? t("docTest.testing") : t("docTest.send")}
+            </Button>
+          </div>
+
+          {formError && (
+            <p className="font-mono text-xs text-red-500 shrink-0">{formError}</p>
+          )}
+
+          <div className="flex-1 overflow-y-auto space-y-4">
+            {testResult && (
+              <>
+                <div className="border border-border bg-card p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                      {t("docTest.aiAnswer")}
+                      {testLoading && (
+                        <span className="ml-2 inline-flex items-center gap-1 text-blue-500">
+                          <SpinnerIcon className="h-2.5 w-2.5 animate-spin" />
+                          {t("docTest.streaming")}
+                        </span>
+                      )}
+                    </span>
+                    {testResult.responseTime && (
+                      <span className="font-mono text-[10px] text-muted">
+                        {testResult.responseTime}ms
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-mono text-sm whitespace-pre-wrap">
+                    {streamingAnswer || testResult.answer}
+                    {testLoading && streamingAnswer && (
+                      <span className="inline-block w-1.5 h-4 bg-foreground animate-pulse ml-0.5" />
+                    )}
+                  </div>
+                  {testResult.usage && (
+                    <div className="mt-2 flex gap-4 text-[10px] text-muted">
+                      {testResult.usage.inputTokens && (
+                        <span>{t("settings.inputTokens")}: {testResult.usage.inputTokens}</span>
+                      )}
+                      {testResult.usage.outputTokens && (
+                        <span>{t("settings.outputTokens")}: {testResult.usage.outputTokens}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {testResult.chunks.length > 0 && (
+                  <div className="border border-border">
+                    <div className="border-b border-border bg-card/50 px-4 py-2">
+                      <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                        {t("docTest.matchedChunks")} ({testResult.chunks.length})
+                      </span>
+                    </div>
+                    <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
+                      {testResult.chunks.map((chunk, index) => (
+                        <div key={chunk.chunkId} className="p-4">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-muted">
+                              {t("docTest.fragment")} #{index + 1} (Index: {chunk.chunkIndex})
+                            </span>
+                            <span className={`font-mono text-[10px] px-2 py-0.5 border ${
+                              chunk.similarity >= 0.8
+                                ? "border-green-500/50 bg-green-500/10 text-green-500"
+                                : chunk.similarity >= 0.6
+                                ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-500"
+                                : "border-border bg-muted/10 text-muted"
+                            }`}>
+                              {t("search.similarity")}: {(chunk.similarity * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="font-mono text-xs text-muted whitespace-pre-wrap line-clamp-4">
+                            {chunk.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {testResult.chunks.length === 0 && (
+                  <div className="border border-border bg-card/50 p-4 text-center">
+                    <span className="font-mono text-xs text-muted">
+                      {t("docTest.noChunksFound")}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!testResult && !testLoading && (
+              <div className="flex h-full items-center justify-center">
+                <span className="font-mono text-xs text-muted">
+                  {t("docTest.enterQueryHint")}
+                </span>
+              </div>
+            )}
+
+            {testLoading && (
+              <div className="flex h-full items-center justify-center">
+                <SpinnerIcon className="h-6 w-6 animate-spin text-muted" />
+              </div>
+            )}
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -736,6 +1018,14 @@ function TrashEmbeddingIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+function ChatIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }

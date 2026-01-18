@@ -28,8 +28,6 @@ CREATE INDEX IF NOT EXISTS idx_docs_embedding_status ON documents(embedding_stat
 -- DOCUMENT CHUNKS TABLE
 -- ============================================
 
--- Store document chunks with their embeddings
--- Using vector(1536) for OpenAI text-embedding-3-small compatibility
 CREATE TABLE IF NOT EXISTS document_chunks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -37,23 +35,16 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     content TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     token_count INTEGER NOT NULL DEFAULT 0,
-    embedding vector(1536),  -- OpenAI text-embedding-3-small dimensions
+    embedding vector,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
-    -- Prevent duplicate chunks for same document
     UNIQUE(document_id, chunk_index)
 );
 
 -- Indexes for document_chunks
 CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON document_chunks(document_id);
 
--- HNSW index for fast similarity search
--- Using cosine distance (most common for semantic embeddings)
--- m=16: connections per node, ef_construction=64: index build quality
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding 
-    ON document_chunks 
-    USING hnsw (embedding vector_cosine_ops) 
-    WITH (m = 16, ef_construction = 64);
+
 
 -- ============================================
 -- ROW LEVEL SECURITY (RLS)
@@ -94,9 +85,8 @@ CREATE TRIGGER tr_document_content_change
 -- SEMANTIC SEARCH FUNCTION
 -- ============================================
 
--- Function to search similar chunks within a knowledge base
 CREATE OR REPLACE FUNCTION search_similar_chunks(
-    query_embedding vector(1536),
+    query_embedding vector,
     target_kb_id UUID,
     match_count INTEGER DEFAULT 5,
     match_threshold FLOAT DEFAULT 0.7
@@ -172,11 +162,8 @@ $$;
 -- ============================================
 
 COMMENT ON TABLE document_chunks IS 'Stores document chunks with vector embeddings for semantic search';
-COMMENT ON COLUMN document_chunks.embedding IS 'Vector embedding (1536 dimensions for OpenAI text-embedding-3-small)';
 COMMENT ON COLUMN document_chunks.chunk_index IS 'Order of chunk within the document (0-based)';
 COMMENT ON COLUMN document_chunks.token_count IS 'Approximate token count for the chunk';
 COMMENT ON COLUMN documents.embedding_status IS 'Vectorization status: pending, processing, completed, failed, outdated';
-COMMENT ON FUNCTION search_similar_chunks IS 'Semantic search: find chunks similar to query embedding within a knowledge base';
-COMMENT ON FUNCTION get_kb_embedding_stats IS 'Get embedding statistics for a knowledge base';
 
 GRANT ALL PRIVILEGES ON TABLE document_chunks TO anon, authenticated, service_role;

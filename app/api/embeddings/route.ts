@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { hasPermission } from "@/lib/supabase/access";
 import { Permissions } from "@/lib/supabase/permissions";
@@ -9,6 +9,8 @@ import {
   deleteKnowledgeBaseEmbeddings,
   getEmbeddingStats,
 } from "@/lib/embeddings";
+
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
 
       const { data: doc, error: docError } = await supabase
         .from("documents")
-        .select("id, content")
+        .select("id, content, title, embedding_status")
         .eq("id", docId)
         .single();
 
@@ -97,15 +99,27 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Document not found" }, { status: 404 });
       }
 
-      const result = await embedDocument(supabase, docId, doc.content || "");
-
-      if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
+      if (doc.embedding_status === "processing") {
+        return NextResponse.json({
+          success: true,
+          status: "processing",
+          message: "Document is already being processed",
+        });
       }
+
+      await supabase
+        .from("documents")
+        .update({ embedding_status: "processing" })
+        .eq("id", docId);
+
+      after(async () => {
+        const bgSupabase = createAdminClient();
+        await embedDocument(bgSupabase, docId, doc.content || "", undefined, doc.title);
+      });
 
       return NextResponse.json({
         success: true,
-        chunkCount: result.chunkCount,
+        status: "processing",
       });
     }
 
@@ -124,16 +138,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Knowledge base not found" }, { status: 404 });
       }
 
-      const result = await embedKnowledgeBase(supabase, kbId);
-
-      if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
-      }
+      after(async () => {
+        const bgSupabase = createAdminClient();
+        await embedKnowledgeBase(bgSupabase, kbId);
+      });
 
       return NextResponse.json({
         success: true,
-        processed: result.processed,
-        failed: result.failed,
+        status: "processing",
       });
     }
 

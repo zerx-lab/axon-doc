@@ -108,6 +108,26 @@ const translations: Translations = {
   "settings.responseTime": { zh: "响应时间", en: "Response Time" },
   "settings.vectorPreview": { zh: "向量预览 (前10维)", en: "Vector Preview (first 10 dims)" },
 
+  "settings.contextualRetrieval": { zh: "上下文增强", en: "Contextual Retrieval" },
+  "settings.contextualRetrievalDesc": { zh: "使用 AI 聊天模型为每个分块生成上下文摘要，提升检索准确率 35-67%", en: "Use AI chat model to generate context for each chunk, improving retrieval accuracy by 35-67%" },
+  "settings.contextualRetrievalNote": { zh: "启用后将使用 AI 聊天模型配置来生成上下文，会增加向量化时间和 API 调用成本", en: "When enabled, uses AI Chat Model settings to generate context. This increases embedding time and API costs." },
+
+  "settings.recallTest": { zh: "召回测试", en: "Recall Test" },
+  "settings.recallTestDesc": { zh: "测试向量模型的语义理解能力", en: "Test semantic understanding of the embedding model" },
+  "settings.recallQuery": { zh: "查询文本", en: "Query Text" },
+  "settings.recallQueryPlaceholder": { zh: "输入查询内容", en: "Enter query text" },
+  "settings.candidateTexts": { zh: "候选文本", en: "Candidate Texts" },
+  "settings.candidatePlaceholder": { zh: "输入候选文本", en: "Enter candidate text" },
+  "settings.addCandidate": { zh: "添加候选", en: "Add Candidate" },
+  "settings.removeCandidate": { zh: "移除", en: "Remove" },
+  "settings.testRecall": { zh: "测试召回", en: "Test Recall" },
+  "settings.recallTesting": { zh: "计算中...", en: "Computing..." },
+  "settings.recallTestSuccess": { zh: "召回测试完成", en: "Recall test completed" },
+  "settings.recallTestFailed": { zh: "召回测试失败", en: "Recall test failed" },
+  "settings.similarity": { zh: "相似度", en: "Similarity" },
+  "settings.rank": { zh: "排名", en: "Rank" },
+  "settings.minCandidates": { zh: "至少需要1个候选文本", en: "At least 1 candidate text required" },
+
   "settings.chatModelConfig": { zh: "AI 聊天模型配置", en: "AI Chat Model Configuration" },
   "settings.chatProvider": { zh: "服务提供商", en: "Provider" },
   "settings.chatProvider_openai": { zh: "OpenAI", en: "OpenAI" },
@@ -401,6 +421,33 @@ const translations: Translations = {
   "error.embedFailed": { zh: "向量化失败", en: "Embedding failed" },
   "error.searchFailed": { zh: "搜索失败", en: "Search failed" },
   "error.deleteEmbeddingFailed": { zh: "删除向量失败", en: "Failed to delete embedding" },
+
+  // Document Test
+  "docTest.test": { zh: "测试", en: "Test" },
+  "docTest.testing": { zh: "测试中...", en: "Testing..." },
+  "docTest.send": { zh: "发送", en: "Send" },
+  "docTest.queryPlaceholder": { zh: "输入问题来测试文档...", en: "Enter a question to test the document..." },
+  "docTest.aiAnswer": { zh: "AI 回答", en: "AI Answer" },
+  "docTest.matchedChunks": { zh: "匹配的文档片段", en: "Matched Document Chunks" },
+  "docTest.fragment": { zh: "片段", en: "Fragment" },
+  "docTest.noChunksFound": { zh: "未找到相关的文档片段", en: "No relevant document chunks found" },
+  "docTest.enterQueryHint": { zh: "输入问题并点击发送来测试文档", en: "Enter a question and click send to test the document" },
+  "docTest.testFailed": { zh: "测试失败", en: "Test failed" },
+  "docTest.streaming": { zh: "生成中...", en: "Generating..." },
+
+  // Task Queue
+  "task.title": { zh: "任务队列", en: "Task Queue" },
+  "task.noTasks": { zh: "暂无任务", en: "No tasks" },
+  "task.cancel": { zh: "取消", en: "Cancel" },
+  "task.clearCompleted": { zh: "清除已完成", en: "Clear completed" },
+  "task.addedToQueue": { zh: "已添加到任务队列", en: "Added to task queue" },
+  "task.status.pending": { zh: "等待中", en: "Pending" },
+  "task.status.running": { zh: "执行中", en: "Running" },
+  "task.status.completed": { zh: "已完成", en: "Completed" },
+  "task.status.failed": { zh: "失败", en: "Failed" },
+  "task.status.cancelled": { zh: "已取消", en: "Cancelled" },
+  "task.embedDocument": { zh: "向量化文档", en: "Embed document" },
+  "task.embedKnowledgeBase": { zh: "批量向量化知识库", en: "Batch embed knowledge base" },
 };
 
 interface I18nContextType {
