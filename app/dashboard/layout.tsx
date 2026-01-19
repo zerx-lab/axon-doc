@@ -97,7 +97,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     <span className="font-mono text-xs font-medium">Ax</span>
                   </div>
                   <span className="font-mono text-[10px] font-medium uppercase tracking-[0.2em]">
-                    AxonBase
+                    AxonDoc
                   </span>
                 </Link>
                 <button

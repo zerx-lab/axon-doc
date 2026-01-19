@@ -66,7 +66,7 @@ export default function LoginPage() {
             </span>
           </div>
           <h1 className="font-mono text-xs font-medium uppercase tracking-[0.3em] text-muted-foreground">
-            AxonBase
+            AxonDoc
           </h1>
         </div>
 

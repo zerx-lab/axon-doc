@@ -53,7 +53,7 @@ const translations: Translations = {
   "dashboard.recentActivity": { zh: "最近活动", en: "Recent Activity" },
   "dashboard.sessionStarted": { zh: "会话已开始", en: "Session started" },
   "dashboard.systemInitialized": { zh: "系统已初始化", en: "System initialized" },
-  "dashboard.welcomeToAxonBase": { zh: "欢迎使用 AxonBase", en: "Welcome to AxonBase" },
+  "dashboard.welcomeToAxonDoc": { zh: "欢迎使用 AxonDoc", en: "Welcome to AxonDoc" },
   "dashboard.justNow": { zh: "刚刚", en: "Just now" },
 
   // Greetings

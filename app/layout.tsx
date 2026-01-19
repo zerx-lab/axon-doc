@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AxonBase",
+  title: "AxonDoc",
   description: "Modern Admin Dashboard",
 };
 

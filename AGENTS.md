@@ -1,4 +1,4 @@
-# AxonBase知识库
+# AxonDoc知识库
 
 ## 必须遵守的要求
 - **多语言规范**：所有用户可见文本必须使用 `lib/i18n.tsx` 的翻译系统
@@ -10,7 +10,7 @@
 
 ## 项目概述
 
-AxonBase 是一个基于 Next.js 16 的应用程序，使用 React 19、Tailwind CSS v4、TypeScript 5 和 Supabase 后端。项目使用 Bun 作为包管理器。
+AxonDoc 是一个基于 Next.js 16 的应用程序，使用 React 19、Tailwind CSS v4、TypeScript 5 和 Supabase 后端。项目使用 Bun 作为包管理器。
 
 ---
 
@@ -43,7 +43,7 @@ bun run lint             # 运行 ESLint
 ## 项目结构
 
 ```
-axon-base/
+axon-doc/
 ├── app/                      # Next.js App Router 页面和布局
 │   ├── api/                  # API Routes
 │   │   ├── auth/             # 认证 API

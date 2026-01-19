@@ -1,7 +1,7 @@
 [project]
 name = "crawler-service"
 version = "0.2.0"
-description = "Adaptive web crawling service with AI-powered content extraction for AxonBase"
+description = "Adaptive web crawling service with AI-powered content extraction for AxonDoc"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
