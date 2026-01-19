@@ -60,7 +60,7 @@ export function validatePagination(
 
 /**
  * Validate URL and check for SSRF risks
- * Returns null if valid, error message if invalid
+ * In development mode, SSRF protection is disabled
  */
 export function validateUrl(url: string): { valid: boolean; error?: string; url?: URL } {
   try {
@@ -71,7 +71,13 @@ export function validateUrl(url: string): { valid: boolean; error?: string; url?
       return { valid: false, error: "Only HTTP and HTTPS protocols are allowed" };
     }
 
-    // Block localhost and private IPs
+    // Skip SSRF checks in development mode
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) {
+      return { valid: true, url: parsed };
+    }
+
+    // Block localhost and private IPs (production only)
     const hostname = parsed.hostname.toLowerCase();
 
     // Block localhost
