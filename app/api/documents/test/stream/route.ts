@@ -46,6 +46,7 @@ interface DebugInfo {
   contextEnabled: boolean;
   hybridSearchUsed: boolean;
   rerankEnabled: boolean;
+  rerankDegraded: boolean;
   totalChunks: number;
   candidatesBeforeRerank: number;
   searchType: string;
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 应用重排序（如果配置启用）
-    const finalResults = await hybridSearchWithReranking(
+    const rerankResult = await hybridSearchWithReranking(
       hybridResults.map(r => ({
         chunk_id: r.chunk_id,
         document_id: r.document_id,
@@ -177,6 +178,7 @@ export async function POST(request: NextRequest) {
       limit
     );
 
+    const finalResults = rerankResult.chunks;
     const isRerankEnabled = rerankerConfig?.enabled && rerankerConfig?.provider !== "none";
     
     const chunksWithSimilarity: ChunkResult[] = finalResults.map((result) => ({
@@ -194,11 +196,12 @@ export async function POST(request: NextRequest) {
     const debugInfo: DebugInfo = {
       contextEnabled: embeddingConfig.contextEnabled ?? false,
       hybridSearchUsed: true,
-      rerankEnabled: isRerankEnabled ?? false,
+      rerankEnabled: rerankResult.reranked,
+      rerankDegraded: rerankResult.degraded,
       totalChunks: finalResults.length,
       candidatesBeforeRerank: hybridResults.length,
       searchType: "hybrid",
-      rerankerProvider: isRerankEnabled ? (rerankerConfig?.provider ?? null) : null,
+      rerankerProvider: rerankResult.reranked ? (rerankerConfig?.provider ?? null) : null,
       embeddingModel: embeddingConfig.model,
       resultTypes: finalResults.reduce((acc, r) => {
         acc[r.search_type] = (acc[r.search_type] || 0) + 1;

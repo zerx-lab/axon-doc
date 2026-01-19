@@ -159,12 +159,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
 
         if (isRerankEnabled && hybridResults.length > 0) {
-          contextChunks = await hybridSearchWithReranking(
+          const rerankResult = await hybridSearchWithReranking(
             hybridResults,
             content,
             rerankerConfig,
             baseMatchCount
           );
+          contextChunks = rerankResult.chunks;
         } else {
           contextChunks = hybridResults.slice(0, baseMatchCount);
         }
