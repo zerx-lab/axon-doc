@@ -4,6 +4,7 @@
 - **多语言规范**：所有用户可见文本必须使用 `lib/i18n.tsx` 的翻译系统
 - **数据库操作**：通过 Next.js API Routes 与 Supabase 进行交互
 - **Supabase 操作规范**：执行任何 Supabase 相关操作前，必须先查阅 `.opencode/rules/` 目录下的对应规则文件
+- **Python 运行环境**：所有 Python 相关操作必须使用 **uv** 而非系统 Python，包括运行脚本、安装依赖、执行测试等
 
 ---
 

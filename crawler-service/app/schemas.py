@@ -8,45 +8,69 @@ from pydantic import BaseModel, Field, HttpUrl
 
 
 class CrawlMode(str, Enum):
-    """Crawl mode options."""
-
     SINGLE_URL = "single_url"
     FULL_SITE = "full_site"
 
 
 class CrawlStatus(str, Enum):
-    """Crawl job status."""
-
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
-class CrawlRequest(BaseModel):
-    """Request model for creating a crawl job."""
+class ExtractionMode(str, Enum):
+    AUTO = "auto"
+    PRESET = "preset"
+    MANUAL = "manual"
 
-    url: HttpUrl = Field(..., description="URL to crawl")
-    mode: CrawlMode = Field(
-        default=CrawlMode.SINGLE_URL, description="Crawl mode: single_url or full_site"
+
+class CrawlRequest(BaseModel):
+    url: HttpUrl
+    kb_id: str
+    user_id: str
+    mode: CrawlMode = CrawlMode.SINGLE_URL
+    source_label: str | None = None
+    max_depth: int = Field(default=3, ge=1, le=10)
+    max_pages: int = Field(default=100, ge=1, le=1000)
+    webhook_url: str | None = None
+
+    use_ai: bool = Field(
+        default=True,
+        description="Enable AI-powered adaptive extraction (recommended)",
     )
-    kb_id: str = Field(..., description="Knowledge base ID to store documents")
-    source_label: str | None = Field(
-        default=None, description="Custom label for the source"
+    extraction_mode: ExtractionMode = Field(
+        default=ExtractionMode.AUTO,
+        description="auto: AI analyzes page structure, preset: use framework preset, manual: use provided selectors",
     )
-    max_depth: int = Field(default=3, ge=1, le=10, description="Max crawl depth")
-    max_pages: int = Field(default=100, ge=1, le=1000, description="Max pages to crawl")
-    webhook_url: str | None = Field(
-        default=None, description="Webhook URL for completion notification"
+    extraction_prompt: str | None = Field(
+        default=None,
+        description="Custom instruction for AI to understand what content to extract",
+    )
+    preset: str | None = Field(
+        default=None,
+        description="Framework preset name: docusaurus, gitbook, vuepress, mkdocs, sphinx, generic",
+    )
+    css_selector: str | None = Field(
+        default=None,
+        description="CSS selector for main content area (manual mode)",
+    )
+    excluded_selector: str | None = Field(
+        default=None,
+        description="CSS selectors to exclude, comma-separated (manual mode)",
+    )
+    force_reanalyze: bool = Field(
+        default=False,
+        description="Force AI re-analysis even if cached config exists",
     )
 
 
 class CrawlResult(BaseModel):
-    """Result of a single page crawl."""
-
     url: str
     title: str | None = None
-    content: str  # Markdown content
+    content: str
     parent_url: str | None = None
     depth: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -54,43 +78,89 @@ class CrawlResult(BaseModel):
 
 
 class CrawlJobResponse(BaseModel):
-    """Response model for crawl job creation."""
-
     job_id: str
     status: CrawlStatus
     message: str
+    config_id: str | None = None
+    framework_detected: str | None = None
 
 
 class CrawlJobStatus(BaseModel):
-    """Response model for crawl job status query."""
-
     job_id: str
     status: CrawlStatus
-    progress: int = 0  # 0-100
+    progress: int = 0
     pages_crawled: int = 0
     total_pages: int | None = None
     error: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
+    config_id: str | None = None
+    framework_detected: str | None = None
 
 
 class CrawlSyncResponse(BaseModel):
-    """Response model for synchronous crawl (single URL)."""
-
     success: bool
     url: str
     document_id: str | None = None
     title: str | None = None
     content_length: int = 0
+    word_count: int = 0
     error: str | None = None
+    config_id: str | None = None
+    framework_detected: str | None = None
+    used_cached_config: bool = False
 
 
 class WebhookPayload(BaseModel):
-    """Payload sent to webhook on job completion."""
-
     job_id: str
     status: CrawlStatus
     kb_id: str
     pages_crawled: int
     document_ids: list[str]
+    error: str | None = None
+    config_id: str | None = None
+    framework_detected: str | None = None
+
+
+class SiteConfigResponse(BaseModel):
+    id: str
+    domain: str
+    path_pattern: str
+    css_selector: str | None
+    excluded_selector: str | None
+    title_selector: str
+    framework_detected: str | None
+    confidence: float
+    success_count: int
+    failure_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class SiteConfigListResponse(BaseModel):
+    configs: list[SiteConfigResponse]
+    total: int
+
+
+class AnalyzeRequest(BaseModel):
+    url: HttpUrl
+    user_prompt: str | None = None
+
+
+class AnalyzeResponse(BaseModel):
+    success: bool
+    css_selector: str | None = None
+    excluded_selector: str | None = None
+    title_selector: str | None = None
+    framework_detected: str | None = None
+    confidence: float = 0.0
+    reasoning: str | None = None
+    error: str | None = None
+
+
+class JobControlResponse(BaseModel):
+    success: bool
+    job_id: str
+    status: CrawlStatus
+    message: str | None = None
     error: str | None = None

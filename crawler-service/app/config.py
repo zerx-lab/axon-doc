@@ -6,7 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables.
+
+    Note: LLM and adaptive crawling settings are loaded from database
+    system_settings table via SettingsLoader. Only infrastructure settings
+    (Supabase, Redis, API) are loaded from environment variables.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -21,10 +26,10 @@ class Settings(BaseSettings):
     # Redis (optional, for async tasks)
     redis_url: str = "redis://localhost:6379"
 
-    # Crawler settings
-    crawler_timeout: int = 60000  # 60 seconds
-    crawler_max_depth: int = 3
-    crawler_max_pages: int = 100
+    crawler_timeout: int = 60000
+    crawler_wait_until: str = (
+        "domcontentloaded"  # domcontentloaded, load, networkidle, commit
+    )
 
     # API settings
     api_host: str = "0.0.0.0"
@@ -36,5 +41,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Get cached settings instance."""
     return Settings()

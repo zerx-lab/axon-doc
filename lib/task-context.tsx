@@ -10,8 +10,29 @@ import {
   type ReactNode,
 } from "react";
 
-export type TaskType = "embed_document" | "embed_kb";
+export type TaskType = "embed_document" | "embed_kb" | "crawl_webpage";
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export interface TaskData {
+  docId?: string;
+  kbId?: string;
+  operatorId: string;
+  url?: string;
+  mode?: "single_url" | "full_site";
+  maxDepth?: number;
+  maxPages?: number;
+  sourceLabel?: string;
+  userId?: string;
+  jobId?: string;
+  useAi?: boolean;
+  extractionMode?: "auto" | "preset" | "manual";
+  extractionPrompt?: string;
+  preset?: string;
+  cssSelector?: string;
+  excludedSelector?: string;
+  forceReanalyze?: boolean;
+  [key: string]: unknown;
+}
 
 export interface Task {
   id: string;
@@ -24,12 +45,7 @@ export interface Task {
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
-  data: {
-    docId?: string;
-    kbId?: string;
-    operatorId: string;
-    [key: string]: unknown;
-  };
+  data: TaskData;
 }
 
 interface TaskContextType {
@@ -389,6 +405,8 @@ async function executeTask(
       return executeEmbedDocument(task, signal);
     case "embed_kb":
       return executeEmbedKnowledgeBase(task, signal);
+    case "crawl_webpage":
+      return executeCrawlWebpage(task, signal);
     default:
       return { success: false, error: "Unknown task type" };
   }
@@ -497,9 +515,120 @@ async function executeEmbedKnowledgeBase(
         return { success: true };
       }
 
-      // No more pending/processing documents means task is complete (even if not all succeeded)
       if (!status.hasPendingOrProcessing && !status.allCompleted) {
         return { success: true };
+      }
+    }
+
+    throw new DOMException("Aborted", "AbortError");
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+type CrawlJobStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+
+async function checkCrawlJobStatus(
+  jobId: string
+): Promise<{ status: CrawlJobStatus; error?: string } | null> {
+  try {
+    const response = await fetch(`/api/crawl?job_id=${jobId}`);
+    if (!response.ok) return null;
+    const result = await response.json();
+    return {
+      status: result.job?.status || "pending",
+      error: result.job?.error,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function executeCrawlWebpage(
+  task: Task,
+  signal: AbortSignal
+): Promise<{ success: boolean; error?: string }> {
+  const {
+    url,
+    kbId,
+    mode,
+    maxDepth,
+    maxPages,
+    sourceLabel,
+    userId,
+    useAi,
+    extractionMode,
+    extractionPrompt,
+    preset,
+    cssSelector,
+    excludedSelector,
+    forceReanalyze,
+  } = task.data;
+
+  if (!url || !kbId) {
+    return { success: false, error: "URL and Knowledge Base ID are required" };
+  }
+
+  try {
+    const response = await fetch("/api/crawl", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        kb_id: kbId,
+        user_id: userId,
+        mode: mode || "single_url",
+        max_depth: maxDepth || 3,
+        max_pages: maxPages || 100,
+        source_label: sourceLabel,
+        use_ai: useAi ?? true,
+        extraction_mode: extractionMode || "auto",
+        extraction_prompt: extractionPrompt,
+        preset,
+        css_selector: cssSelector,
+        excluded_selector: excludedSelector,
+        force_reanalyze: forceReanalyze || false,
+      }),
+      signal,
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      return { success: false, error: result.error || "Failed to start crawl" };
+    }
+
+    const jobId = result.job_id || result.id;
+    if (!jobId) {
+      return { success: true };
+    }
+
+    while (!signal.aborted) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      
+      if (signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
+      const status = await checkCrawlJobStatus(jobId);
+      
+      if (!status) continue;
+
+      if (status.status === "completed") {
+        return { success: true };
+      }
+      
+      if (status.status === "failed") {
+        return { success: false, error: status.error || "Crawl failed on server" };
+      }
+
+      if (status.status === "cancelled") {
+        return { success: false, error: "Crawl was cancelled" };
       }
     }
 

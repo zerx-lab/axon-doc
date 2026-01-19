@@ -7,7 +7,6 @@ import { useI18n } from "@/lib/i18n";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { useAuth, type User } from "@/lib/auth-context";
 import { TaskProvider } from "@/lib/task-context";
-import { TaskPanel } from "@/components/TaskPanel";
 
 interface DashboardLayoutProps {
   readonly children: ReactNode;
@@ -18,6 +17,7 @@ const navigationItems = [
   { key: "nav.users", href: "/dashboard/users", icon: UsersIcon },
   { key: "nav.roles", href: "/dashboard/roles", icon: ShieldIcon },
   { key: "nav.knowledgeBases", href: "/dashboard/knowledge-bases", icon: BookIcon },
+  { key: "nav.tasks", href: "/dashboard/tasks", icon: TaskIcon },
   { key: "nav.settings", href: "/dashboard/settings", icon: SettingsIcon },
 ];
 
@@ -147,7 +147,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex-1">{children}</div>
         </main>
 
-        <TaskPanel />
       </div>
     </TaskProvider>
   );
@@ -213,6 +212,16 @@ function BookIcon({ className }: { readonly className?: string }) {
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
       <path d="M8 7h8M8 11h8M8 15h5" />
+    </svg>
+  );
+}
+
+function TaskIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="M9 12l2 2 4-4" />
     </svg>
   );
 }

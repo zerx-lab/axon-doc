@@ -1,19 +1,22 @@
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Callable
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 from app.config import get_settings
+from app.job_manager import get_job_manager
 from app.schemas import CrawlResult
 
+logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
-def _run_in_new_loop(coro_func, *args, **kwargs):
+def _run_in_new_loop(coro_func: Any, *args: Any, **kwargs: Any) -> Any:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -32,7 +35,7 @@ class CrawlerService:
 
     async def _do_crawl_single(self, url: str) -> CrawlResult:
         config = CrawlerRunConfig(
-            wait_until="networkidle",
+            wait_until=self.settings.crawler_wait_until,
             page_timeout=self.settings.crawler_timeout,
         )
 
@@ -66,6 +69,8 @@ class CrawlerService:
         url: str,
         max_depth: int,
         max_pages: int,
+        on_page_crawled: Callable[[CrawlResult], bool] | None = None,
+        job_id: str | None = None,
     ) -> list[CrawlResult]:
         deep_crawl_strategy = BFSDeepCrawlStrategy(
             max_depth=max_depth,
@@ -75,51 +80,53 @@ class CrawlerService:
 
         config = CrawlerRunConfig(
             deep_crawl_strategy=deep_crawl_strategy,
-            wait_until="networkidle",
+            wait_until=self.settings.crawler_wait_until,
             page_timeout=self.settings.crawler_timeout,
+            stream=True,
         )
 
         results_list: list[CrawlResult] = []
+        page_count = 0
+        job_manager = get_job_manager() if job_id else None
 
         async with AsyncWebCrawler(config=self.browser_config) as crawler:
-            results = await crawler.arun(url=url, config=config)
+            async for result in await crawler.arun(url=url, config=config):
+                if job_id and job_manager and job_manager.should_stop(job_id):
+                    logger.info(f"[Job {job_id}] Crawl cancelled, stopping iteration")
+                    break
 
-            if isinstance(results, list):
-                for result in results:
-                    if result.success:
-                        metadata = result.metadata or {}
-                        results_list.append(
-                            CrawlResult(
-                                url=result.url,
-                                title=metadata.get("title"),
-                                content=result.markdown or "",
-                                parent_url=getattr(result, "parent_url", None),
-                                depth=getattr(result, "depth", 0),
-                                metadata={
-                                    "description": metadata.get("description"),
-                                    "keywords": metadata.get("keywords"),
-                                    "status_code": result.status_code,
-                                },
-                                crawled_at=datetime.utcnow(),
+                page_count += 1
+                if result.success:
+                    metadata = result.metadata or {}
+                    crawl_result = CrawlResult(
+                        url=result.url,
+                        title=metadata.get("title"),
+                        content=result.markdown or "",
+                        parent_url=getattr(result, "parent_url", None),
+                        depth=getattr(result, "depth", 0),
+                        metadata={
+                            "description": metadata.get("description"),
+                            "keywords": metadata.get("keywords"),
+                            "status_code": result.status_code,
+                        },
+                        crawled_at=datetime.utcnow(),
+                    )
+
+                    if on_page_crawled:
+                        try:
+                            if on_page_crawled(crawl_result):
+                                results_list.append(crawl_result)
+                            logger.info(
+                                f"[STREAM] Page {page_count} saved via callback"
                             )
-                        )
-            else:
-                if results.success:
-                    metadata = results.metadata or {}
-                    results_list.append(
-                        CrawlResult(
-                            url=results.url,
-                            title=metadata.get("title"),
-                            content=results.markdown or "",
-                            parent_url=None,
-                            depth=0,
-                            metadata={
-                                "description": metadata.get("description"),
-                                "keywords": metadata.get("keywords"),
-                                "status_code": results.status_code,
-                            },
-                            crawled_at=datetime.utcnow(),
-                        )
+                        except Exception as e:
+                            logger.error(f"on_page_crawled callback error: {e}")
+                            results_list.append(crawl_result)
+                    else:
+                        results_list.append(crawl_result)
+                else:
+                    logger.warning(
+                        f"[STREAM] Page {page_count} failed: {getattr(result, 'error_message', 'unknown')}"
                     )
 
         return results_list
@@ -129,12 +136,20 @@ class CrawlerService:
         url: str,
         max_depth: int = 3,
         max_pages: int = 100,
+        on_page_crawled: Callable[[CrawlResult], bool] | None = None,
+        job_id: str | None = None,
     ) -> AsyncGenerator[CrawlResult, None]:
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(
             _executor,
             partial(
-                _run_in_new_loop, self._do_crawl_full_site, url, max_depth, max_pages
+                _run_in_new_loop,
+                self._do_crawl_full_site,
+                url,
+                max_depth,
+                max_pages,
+                on_page_crawled,
+                job_id,
             ),
         )
         for result in results:

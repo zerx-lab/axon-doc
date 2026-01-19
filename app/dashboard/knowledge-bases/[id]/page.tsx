@@ -7,6 +7,8 @@ import { useTask } from "@/lib/task-context";
 import { Button, Input, Dialog, MarkdownEditor } from "@/components/ui";
 import { useRouter, useParams } from "next/navigation";
 import { PERMISSIONS } from "@/lib/permissions";
+import { CrawlDialog } from "@/components/CrawlDialog";
+import { CrawlJobList } from "@/components/CrawlJobList";
 
 interface Document {
   id: string;
@@ -16,6 +18,7 @@ interface Document {
   wordCount: number;
   status: string;
   embeddingStatus: "pending" | "processing" | "completed" | "failed" | "outdated";
+  sourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,7 +29,7 @@ interface KnowledgeBase {
   description: string | null;
 }
 
-type DialogType = "create" | "edit" | "delete" | "preview" | "test" | null;
+type DialogType = "create" | "edit" | "delete" | "preview" | "test" | "batchDelete" | null;
 
 type SearchType = "vector" | "bm25" | "hybrid";
 
@@ -87,6 +90,11 @@ export default function DocumentsPage() {
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDocs, setTotalDocs] = useState(0);
+  const pageSize = 20;
   const [actionLoading, setActionLoading] = useState(false);
   const [embeddingLoading, setEmbeddingLoading] = useState<Map<string, boolean>>(new Map());
 
@@ -103,6 +111,10 @@ export default function DocumentsPage() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [streamingAnswer, setStreamingAnswer] = useState("");
+  const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"documents" | "crawl">("documents");
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [batchEmbedLoading, setBatchEmbedLoading] = useState(false);
 
   const currentUserId = authUser?.id;
 
@@ -128,7 +140,7 @@ export default function DocumentsPage() {
     }
   }, [currentUserId, kbId]);
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchDocuments = useCallback(async (page = currentPage) => {
     if (!currentUserId || !canListDocs || !kbId) return;
     
     setLoading(true);
@@ -136,6 +148,8 @@ export default function DocumentsPage() {
       const params = new URLSearchParams({
         operatorId: currentUserId,
         kbId: kbId,
+        page: page.toString(),
+        limit: pageSize.toString(),
       });
       if (search) {
         params.append("search", search);
@@ -146,18 +160,28 @@ export default function DocumentsPage() {
       
       if (result.documents) {
         setDocuments(result.documents);
+        setTotalPages(result.totalPages || 1);
+        setTotalDocs(result.total || 0);
+        setCurrentPage(page);
       }
     } catch (error) {
       console.error("Failed to fetch documents:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, kbId, search, canListDocs]);
+  }, [currentUserId, kbId, search, canListDocs, currentPage, pageSize]);
 
   useEffect(() => {
     fetchKnowledgeBase();
-    fetchDocuments();
-  }, [fetchKnowledgeBase, fetchDocuments]);
+    fetchDocuments(1);
+  }, [fetchKnowledgeBase]);
+  
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+    fetchDocuments(1);
+  }, [search]);
 
   useEffect(() => {
     const prevTasks = prevTasksRef.current;
@@ -526,6 +550,87 @@ export default function DocumentsPage() {
     }
   };
 
+  const toggleSelectDoc = (docId: string) => {
+    setSelectedDocIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(docId)) {
+        newSet.delete(docId);
+      } else {
+        newSet.add(docId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedDocIds.size === documents.length) {
+      setSelectedDocIds(new Set());
+    } else {
+      setSelectedDocIds(new Set(documents.map(d => d.id)));
+    }
+  };
+
+  const openBatchDeleteDialog = () => {
+    if (selectedDocIds.size === 0) return;
+    setDialogType("batchDelete");
+  };
+
+  const handleBatchDelete = async () => {
+    if (!currentUserId || selectedDocIds.size === 0) return;
+
+    setActionLoading(true);
+    try {
+      const deletePromises = Array.from(selectedDocIds).map(async (docId) => {
+        const params = new URLSearchParams({
+          operatorId: currentUserId,
+          docId: docId,
+        });
+        
+        const response = await fetch(`/api/documents?${params}`, {
+          method: "DELETE",
+        });
+        
+        return response.json();
+      });
+      
+      await Promise.all(deletePromises);
+      setSelectedDocIds(new Set());
+      closeDialog();
+      fetchDocuments();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t("error.deleteFailed"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBatchEmbed = () => {
+    if (!currentUserId || !kbId || !knowledgeBase) return;
+
+    const pendingDocs = documents.filter(
+      (d) => d.embeddingStatus === "pending" || d.embeddingStatus === "failed" || d.embeddingStatus === "outdated"
+    );
+
+    if (pendingDocs.length === 0) return;
+
+    setBatchEmbedLoading(true);
+    
+    addTask({
+      type: "embed_kb",
+      title: `${t("embedding.embedAll")}: ${knowledgeBase.name}`,
+      data: {
+        kbId,
+        operatorId: currentUserId,
+      },
+    });
+
+    setTimeout(() => setBatchEmbedLoading(false), 500);
+  };
+
+  const pendingEmbedCount = documents.filter(
+    (d) => d.embeddingStatus === "pending" || d.embeddingStatus === "failed" || d.embeddingStatus === "outdated"
+  ).length;
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -543,61 +648,163 @@ export default function DocumentsPage() {
               {documents.length} {t("docs.document").toLowerCase()}(s)
             </p>
           </div>
-          {canCreateDoc && (
-            <Button onClick={openCreateDialog}>
-              <PlusIcon className="mr-2 h-3 w-3" />
-              {t("docs.create")}
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="secondary" 
+              onClick={() => fetchDocuments(currentPage)}
+              disabled={loading}
+            >
+              <RefreshIcon className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+              {t("common.refresh")}
             </Button>
-          )}
+            {canManageEmbedding && pendingEmbedCount > 0 && (
+              <Button
+                variant="secondary"
+                onClick={handleBatchEmbed}
+                disabled={batchEmbedLoading}
+              >
+                {batchEmbedLoading ? (
+                  <SpinnerIcon className="mr-2 h-3 w-3 animate-spin" />
+                ) : (
+                  <BatchEmbedIcon className="mr-2 h-3 w-3" />
+                )}
+                {t("embedding.embedAll")} ({pendingEmbedCount})
+              </Button>
+            )}
+            {canCreateDoc && (
+              <>
+                <Button variant="secondary" onClick={() => setCrawlDialogOpen(true)}>
+                  <GlobeIcon className="mr-2 h-3 w-3" />
+                  {t("crawl.crawlWebpage")}
+                </Button>
+                <Button onClick={openCreateDialog}>
+                  <PlusIcon className="mr-2 h-3 w-3" />
+                  {t("docs.create")}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="mb-6">
-        <Input
-          placeholder={t("docs.searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
+      <div className="mb-6 flex items-center gap-4">
+        <div className="flex border border-border">
+          <button
+            onClick={() => setActiveTab("documents")}
+            className={`px-4 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${
+              activeTab === "documents"
+                ? "bg-foreground text-background"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            {t("docs.title")}
+          </button>
+          <button
+            onClick={() => setActiveTab("crawl")}
+            className={`px-4 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${
+              activeTab === "crawl"
+                ? "bg-foreground text-background"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            {t("crawl.jobs")}
+          </button>
+        </div>
+        {activeTab === "documents" && (
+          <>
+            <Input
+              placeholder={t("docs.searchPlaceholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="max-w-sm"
+            />
+            {canDeleteDoc && selectedDocIds.size > 0 && (
+              <Button variant="danger" onClick={openBatchDeleteDialog}>
+                <TrashIcon className="mr-2 h-3 w-3" />
+                {t("docs.batchDelete")} ({selectedDocIds.size})
+              </Button>
+            )}
+          </>
+        )}
       </div>
 
-      <div className="border border-border">
-        <div className="grid grid-cols-[2fr_120px_120px_150px_160px_220px] gap-4 border-b border-border bg-card px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("docs.docTitle")}
+      {activeTab === "documents" ? (
+        <>
+          <div className="border border-border">
+            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3">
+            {canDeleteDoc && (
+              <div className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={documents.length > 0 && selectedDocIds.size === documents.length}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 cursor-pointer accent-foreground"
+                />
+              </div>
+            )}
+            {!canDeleteDoc && <div />}
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("docs.docTitle")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("docs.sourceUrl")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("docs.wordCount")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("docs.status")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("embedding.status")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("common.createdAt")}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+              {t("common.actions")}
+            </div>
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("docs.wordCount")}
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("docs.status")}
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("embedding.status")}
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("common.createdAt")}
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            {t("common.actions")}
-          </div>
-        </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="font-mono text-xs text-muted">{t("common.loading")}...</span>
-          </div>
-        ) : documents.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="font-mono text-xs text-muted">{t("common.noData")}</span>
-          </div>
-        ) : (
-          documents.map((doc) => (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="font-mono text-xs text-muted">{t("common.loading")}...</span>
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="font-mono text-xs text-muted">{t("common.noData")}</span>
+            </div>
+          ) : (
+            documents.map((doc) => (
             <div
               key={doc.id}
-              className="grid grid-cols-[2fr_120px_120px_150px_160px_220px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
             >
-              <div className="font-mono text-sm">{doc.title}</div>
+              <div className="flex items-center justify-center">
+                {canDeleteDoc && (
+                  <input
+                    type="checkbox"
+                    checked={selectedDocIds.has(doc.id)}
+                    onChange={() => toggleSelectDoc(doc.id)}
+                    className="h-4 w-4 cursor-pointer accent-foreground"
+                  />
+                )}
+              </div>
+              <div className="font-mono text-sm truncate" title={doc.title}>{doc.title}</div>
+              <div className="min-w-0">
+                {doc.sourceUrl ? (
+                  <button
+                    onClick={() => window.open(doc.sourceUrl!, "_blank", "noopener,noreferrer")}
+                    className="inline-flex items-center gap-1 font-mono text-xs text-muted hover:text-blue-500 max-w-full"
+                    title={doc.sourceUrl}
+                  >
+                    <span className="truncate">{new URL(doc.sourceUrl).hostname}</span>
+                    <ExternalLinkIcon className="h-3 w-3 shrink-0" />
+                  </button>
+                ) : (
+                  <span className="font-mono text-xs text-muted">-</span>
+                )}
+              </div>
               <div className="font-mono text-sm text-muted">
                 {doc.wordCount}
               </div>
@@ -705,7 +912,83 @@ export default function DocumentsPage() {
             </div>
           ))
         )}
-      </div>
+        </div>
+        
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between border border-border bg-card px-4 py-3">
+            <div className="font-mono text-xs text-muted">
+              {t("pagination.showing")
+                .replace("{from}", String((currentPage - 1) * pageSize + 1))
+                .replace("{to}", String(Math.min(currentPage * pageSize, totalDocs)))
+                .replace("{total}", String(totalDocs))}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => fetchDocuments(1)}
+                disabled={currentPage === 1 || loading}
+                className="flex h-8 w-8 items-center justify-center border border-border font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 hover:bg-card"
+                title={t("pagination.first")}
+              >
+                <ChevronDoubleLeftIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => fetchDocuments(currentPage - 1)}
+                disabled={currentPage === 1 || loading}
+                className="flex h-8 w-8 items-center justify-center border border-border font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 hover:bg-card"
+                title={t("pagination.prev")}
+              >
+                <ChevronLeftIcon className="h-3.5 w-3.5" />
+              </button>
+              <div className="flex items-center gap-1 px-2">
+                {generatePageNumbers(currentPage, totalPages).map((pageNum, idx) => (
+                  pageNum === "..." ? (
+                    <span key={`ellipsis-${idx}`} className="px-1 font-mono text-xs text-muted">...</span>
+                  ) : (
+                    <button
+                      key={pageNum}
+                      onClick={() => fetchDocuments(pageNum as number)}
+                      disabled={loading}
+                      className={`flex h-8 min-w-8 items-center justify-center border font-mono text-xs disabled:cursor-not-allowed ${
+                        currentPage === pageNum
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border hover:bg-card"
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                ))}
+              </div>
+              <button
+                onClick={() => fetchDocuments(currentPage + 1)}
+                disabled={currentPage === totalPages || loading}
+                className="flex h-8 w-8 items-center justify-center border border-border font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 hover:bg-card"
+                title={t("pagination.next")}
+              >
+                <ChevronRightIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => fetchDocuments(totalPages)}
+                disabled={currentPage === totalPages || loading}
+                className="flex h-8 w-8 items-center justify-center border border-border font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 hover:bg-card"
+                title={t("pagination.last")}
+              >
+                <ChevronDoubleRightIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+        </>
+      ) : (
+        <CrawlJobList kbId={kbId} onRefreshDocuments={() => fetchDocuments(1)} />
+      )}
+
+      <CrawlDialog
+        open={crawlDialogOpen}
+        onClose={() => setCrawlDialogOpen(false)}
+        kbId={kbId}
+        userId={currentUserId || ""}
+      />
 
       <Dialog
         open={dialogType === "create"}
@@ -806,6 +1089,32 @@ export default function DocumentsPage() {
           <p className="font-mono text-sm">{t("docs.confirmDelete")}</p>
           <p className="font-mono text-sm text-muted">
             {t("docs.docTitle")}: <strong>{selectedDoc?.title}</strong>
+          </p>
+          {formError && (
+            <p className="font-mono text-xs text-red-500">{formError}</p>
+          )}
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={dialogType === "batchDelete"}
+        onClose={closeDialog}
+        title={t("docs.batchDelete")}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeDialog}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={handleBatchDelete} loading={actionLoading}>
+              {t("common.delete")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="font-mono text-sm">{t("docs.confirmBatchDelete")}</p>
+          <p className="font-mono text-sm text-muted">
+            {t("docs.selectedCount")}: <strong>{selectedDocIds.size}</strong>
           </p>
           {formError && (
             <p className="font-mono text-xs text-red-500">{formError}</p>
@@ -1041,10 +1350,69 @@ export default function DocumentsPage() {
   );
 }
 
+function generatePageNumbers(current: number, total: number): (number | "...")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const pages: (number | "...")[] = [];
+  
+  if (current <= 4) {
+    pages.push(1, 2, 3, 4, 5, "...", total);
+  } else if (current >= total - 3) {
+    pages.push(1, "...", total - 4, total - 3, total - 2, total - 1, total);
+  } else {
+    pages.push(1, "...", current - 1, current, current + 1, "...", total);
+  }
+  
+  return pages;
+}
+
+function ChevronLeftIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+function ChevronDoubleLeftIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+    </svg>
+  );
+}
+
+function ChevronDoubleRightIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M13 7l5 5-5 5M6 7l5 5-5 5" />
+    </svg>
+  );
+}
+
 function PlusIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function GlobeIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
     </svg>
   );
 }
@@ -1083,6 +1451,14 @@ function ArrowLeftIcon({ className }: { readonly className?: string }) {
   );
 }
 
+function ExternalLinkIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+    </svg>
+  );
+}
+
 function LightningIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -1112,6 +1488,24 @@ function ChatIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M23 4v6h-6M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
+function BatchEmbedIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" />
+      <path d="M19 2l-2 4M21 6l-4 2" opacity="0.5" />
     </svg>
   );
 }

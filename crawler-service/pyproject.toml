@@ -1,14 +1,14 @@
 [project]
 name = "crawler-service"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Adaptive web crawling service with AI-powered content extraction for AxonBase"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "crawl4ai>=0.8.0",
     "fastapi>=0.128.0",
     "httpx>=0.28.1",
-    "nest-asyncio>=1.6.0",
+    "litellm>=1.50.0",
     "pydantic-settings>=2.12.0",
     "python-dotenv>=1.2.1",
     "redis>=7.1.0",

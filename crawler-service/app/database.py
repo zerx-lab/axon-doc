@@ -32,6 +32,9 @@ class Database:
 
         Returns the document ID if successful, None otherwise.
         """
+        if not user_id:
+            raise ValueError("user_id is required for document insertion")
+
         # Generate content hash for deduplication
         content_hash = hashlib.sha256(result.content.encode()).hexdigest()
 
@@ -44,12 +47,19 @@ class Database:
             .execute()
         )
 
+        content = result.content or ""
+        word_count = len(content.split())
+        char_count = len(content)
+
         document_data = {
             "kb_id": kb_id,
+            "user_id": user_id,
             "title": result.title or "Untitled",
-            "content": result.content,
+            "content": content,
             "file_type": "url",
-            "status": "pending",  # Will be processed for embeddings later
+            "word_count": word_count,
+            "char_count": char_count,
+            "status": "active",
             "source_url": str(result.url),
             "source_type": "crawl",
             "source_label": source_label,
@@ -59,9 +69,6 @@ class Database:
             "content_hash": content_hash,
             "metadata": result.metadata,
         }
-
-        if user_id:
-            document_data["user_id"] = user_id
 
         if existing.data:
             # Update existing document
@@ -85,24 +92,23 @@ class Database:
         max_depth: int,
         max_pages: int,
         source_label: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Create a crawl job record and return the job ID."""
-        response = (
-            self.client.table("crawl_jobs")
-            .insert(
-                {
-                    "url": url,
-                    "kb_id": kb_id,
-                    "mode": mode,
-                    "max_depth": max_depth,
-                    "max_pages": max_pages,
-                    "source_label": source_label,
-                    "status": "pending",
-                    "pages_crawled": 0,
-                }
-            )
-            .execute()
-        )
+        data = {
+            "url": url,
+            "kb_id": kb_id,
+            "mode": mode,
+            "max_depth": max_depth,
+            "max_pages": max_pages,
+            "source_label": source_label,
+            "status": "pending",
+            "pages_crawled": 0,
+        }
+        if user_id:
+            data["user_id"] = user_id
+
+        response = self.client.table("crawl_jobs").insert(data).execute()
         return response.data[0]["id"]
 
     def update_crawl_job(

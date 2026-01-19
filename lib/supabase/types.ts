@@ -187,6 +187,12 @@ export interface Database {
           status: string;
           embedding_status: EmbeddingStatus;
           metadata: Json;
+          source_url: string | null;
+          source_type: string | null;
+          source_label: string | null;
+          parent_url: string | null;
+          crawl_depth: number | null;
+          crawled_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -203,6 +209,12 @@ export interface Database {
           status?: string;
           embedding_status?: EmbeddingStatus;
           metadata?: Json;
+          source_url?: string | null;
+          source_type?: string | null;
+          source_label?: string | null;
+          parent_url?: string | null;
+          crawl_depth?: number | null;
+          crawled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -219,6 +231,12 @@ export interface Database {
           status?: string;
           embedding_status?: EmbeddingStatus;
           metadata?: Json;
+          source_url?: string | null;
+          source_type?: string | null;
+          source_label?: string | null;
+          parent_url?: string | null;
+          crawl_depth?: number | null;
+          crawled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -327,6 +345,138 @@ export interface Database {
           }
         ];
       };
+      crawl_jobs: {
+        Row: {
+          id: string;
+          url: string;
+          kb_id: string;
+          user_id: string | null;
+          mode: string;
+          max_depth: number;
+          max_pages: number;
+          source_label: string | null;
+          status: string;
+          progress: number;
+          pages_crawled: number;
+          total_pages: number;
+          failed_pages: number;
+          error: string | null;
+          settings: Json;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          url: string;
+          kb_id: string;
+          user_id?: string | null;
+          mode?: string;
+          max_depth?: number;
+          max_pages?: number;
+          source_label?: string | null;
+          status?: string;
+          progress?: number;
+          pages_crawled?: number;
+          total_pages?: number;
+          failed_pages?: number;
+          error?: string | null;
+          settings?: Json;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          url?: string;
+          kb_id?: string;
+          user_id?: string | null;
+          mode?: string;
+          max_depth?: number;
+          max_pages?: number;
+          source_label?: string | null;
+          status?: string;
+          progress?: number;
+          pages_crawled?: number;
+          total_pages?: number;
+          failed_pages?: number;
+          error?: string | null;
+          settings?: Json;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "crawl_jobs_kb_id_fkey";
+            columns: ["kb_id"];
+            isOneToOne: false;
+            referencedRelation: "knowledge_bases";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "crawl_jobs_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      crawl_pages: {
+        Row: {
+          id: string;
+          job_id: string;
+          url: string;
+          status: string;
+          document_id: string | null;
+          content_hash: string | null;
+          title: string | null;
+          depth: number;
+          error_message: string | null;
+          crawled_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_id: string;
+          url: string;
+          status?: string;
+          document_id?: string | null;
+          content_hash?: string | null;
+          title?: string | null;
+          depth?: number;
+          error_message?: string | null;
+          crawled_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_id?: string;
+          url?: string;
+          status?: string;
+          document_id?: string | null;
+          content_hash?: string | null;
+          title?: string | null;
+          depth?: number;
+          error_message?: string | null;
+          crawled_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "crawl_pages_job_id_fkey";
+            columns: ["job_id"];
+            isOneToOne: false;
+            referencedRelation: "crawl_jobs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "crawl_pages_document_id_fkey";
+            columns: ["document_id"];
+            isOneToOne: false;
+            referencedRelation: "documents";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -390,6 +540,63 @@ export interface EmbeddingSettings {
 }
 
 export type SystemSetting = Database["public"]["Tables"]["system_settings"]["Row"];
+
+// Crawl Types
+export type CrawlJobStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+export type CrawlJobMode = "single_url" | "full_site";
+export type CrawlPageStatus = "pending" | "crawling" | "completed" | "failed" | "skipped";
+
+export interface CrawlJob {
+  id: string;
+  url: string;
+  kb_id: string;
+  user_id: string | null;
+  mode: CrawlJobMode;
+  max_depth: number;
+  max_pages: number;
+  source_label: string | null;
+  status: CrawlJobStatus;
+  progress: number;
+  pages_crawled: number;
+  total_pages: number;
+  failed_pages: number;
+  error: string | null;
+  settings: Json;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface CrawlPage {
+  id: string;
+  job_id: string;
+  url: string;
+  status: CrawlPageStatus;
+  document_id: string | null;
+  content_hash: string | null;
+  title: string | null;
+  depth: number;
+  error_message: string | null;
+  crawled_at: string | null;
+  created_at: string;
+}
+
+export interface CrawlJobWithPages extends CrawlJob {
+  pages?: CrawlPage[];
+}
+
+export interface CrawlProgress {
+  job_id: string;
+  status: CrawlJobStatus;
+  pages_crawled: number;
+  total_pages: number;
+  failed_pages: number;
+  progress: number;
+  latest_page?: {
+    url: string;
+    status: CrawlPageStatus;
+    title?: string;
+  };
+}
 
 export interface KnowledgeBaseSettings {
   embedding?: EmbeddingSettings;

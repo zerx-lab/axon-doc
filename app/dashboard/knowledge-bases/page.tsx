@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
+import { useTask } from "@/lib/task-context";
 import { Button, Input, Dialog } from "@/components/ui";
 import { useRouter } from "next/navigation";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -28,6 +29,8 @@ export default function KnowledgeBasesPage() {
   const { t } = useI18n();
   const { user: authUser, isLoading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
+  const { tasks } = useTask();
+  const prevTasksRef = useRef<typeof tasks>([]);
   
   const canListKB = hasPermission(PERMISSIONS.KB_LIST);
   const canCreateKB = hasPermission(PERMISSIONS.KB_CREATE);
@@ -112,6 +115,25 @@ export default function KnowledgeBasesPage() {
   useEffect(() => {
     fetchKnowledgeBases();
   }, [fetchKnowledgeBases]);
+
+  useEffect(() => {
+    const prevTasks = prevTasksRef.current;
+    const relevantTaskCompleted = tasks.some((task) => {
+      const prevTask = prevTasks.find((t) => t.id === task.id);
+      const wasRunningOrPending = prevTask && (prevTask.status === "running" || prevTask.status === "pending");
+      const isNowCompleted = task.status === "completed" || task.status === "failed";
+      const isRelevant = 
+        (task.type === "embed_kb" && task.data.kbId && knowledgeBases.some((kb) => kb.id === task.data.kbId)) ||
+        (task.type === "crawl_webpage" && task.data.kbId && knowledgeBases.some((kb) => kb.id === task.data.kbId));
+      return wasRunningOrPending && isNowCompleted && isRelevant;
+    });
+
+    if (relevantTaskCompleted) {
+      fetchKnowledgeBases();
+    }
+
+    prevTasksRef.current = tasks;
+  }, [tasks, knowledgeBases, fetchKnowledgeBases]);
   
   useEffect(() => {
     if (!authLoading && !authUser) {
@@ -300,6 +322,14 @@ export default function KnowledgeBasesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="secondary" 
+            onClick={fetchKnowledgeBases}
+            disabled={loading}
+          >
+            <RefreshIcon className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+            {t("common.refresh")}
+          </Button>
           {canCreateKB && (
             <Button onClick={openCreateDialog}>
               <PlusIcon className="mr-2 h-3 w-3" />
@@ -565,6 +595,15 @@ function SpinnerIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M23 4v6h-6M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
     </svg>
   );
 }

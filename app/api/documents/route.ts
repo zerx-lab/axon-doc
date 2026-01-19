@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { hasPermission } from "@/lib/supabase/access";
 import { Permissions } from "@/lib/supabase/permissions";
 import { computeContentHash } from "@/lib/chunking";
+import { deleteDocumentEmbeddings } from "@/lib/embeddings";
 
 function countWords(content: string): number {
   const chineseChars = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     const { data: docs, count, error } = await supabase
       .from("documents")
-      .select("id, kb_id, title, file_type, word_count, char_count, status, embedding_status, created_at, updated_at", { count: "exact" })
+      .select("id, kb_id, title, file_type, word_count, char_count, status, embedding_status, source_url, created_at, updated_at", { count: "exact" })
       .eq("kb_id", kbId)
       .eq("user_id", operatorId)
       .order("created_at", { ascending: false })
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
       charCount: doc.char_count,
       status: doc.status,
       embeddingStatus: doc.embedding_status || "pending",
+      sourceUrl: doc.source_url,
       createdAt: doc.created_at,
       updatedAt: doc.updated_at,
     }));
@@ -219,6 +221,8 @@ export async function DELETE(request: NextRequest) {
     if (!existingDoc || existingDoc.user_id !== operatorId) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
+
+    await deleteDocumentEmbeddings(supabase, docId);
 
     const { error } = await supabase.from("documents").delete().eq("id", docId);
 
