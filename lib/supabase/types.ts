@@ -442,7 +442,16 @@ export interface HybridSearchChunkWithTokens extends HybridSearchChunk {
   token_count: number;
 }
 
-export type RerankerProvider = "cohere" | "jina" | "voyage" | "local-bge" | "none";
+export type RerankerProvider = "cohere" | "jina" | "voyage" | "aliyun" | "openai-compatible" | "none";
+
+/** 
+ * API 响应格式类型
+ * - cohere: { results: [{ index, relevance_score }] }
+ * - jina: { results: [{ index, relevance_score, document }] }
+ * - voyage: { data: [{ index, relevance_score }] }
+ * - auto: 自动检测响应格式
+ */
+export type RerankerResponseFormat = "cohere" | "jina" | "voyage" | "aliyun" | "auto";
 
 export interface RerankerConfig {
   provider: RerankerProvider;
@@ -450,6 +459,10 @@ export interface RerankerConfig {
   model?: string;
   baseUrl?: string;
   enabled: boolean;
+  /** 仅用于 openai-compatible provider，指定 API 响应格式 */
+  responseFormat?: RerankerResponseFormat;
+  /** 自定义请求头 */
+  customHeaders?: Record<string, string>;
 }
 
 export interface SearchStats {

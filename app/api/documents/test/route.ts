@@ -6,12 +6,13 @@ import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { ChatConfig, SearchType } from "@/lib/supabase/types";
+import type { ChatConfig, SearchType, RerankerConfig } from "@/lib/supabase/types";
 import {
   generateSingleEmbedding,
   getEmbeddingConfig,
   hybridSearchDocumentChunks,
 } from "@/lib/embeddings";
+import { hybridSearchWithReranking } from "@/lib/reranker";
 import {
   t,
   parseLocale,
@@ -114,30 +115,63 @@ export async function POST(request: NextRequest) {
     const embeddingConfig = await getEmbeddingConfig(supabase);
     const queryEmbedding = await generateSingleEmbedding(query, embeddingConfig);
 
+    // 获取重排序配置
+    const { data: rerankerConfigData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "reranker_config")
+      .single();
+    
+    const rerankerConfig = rerankerConfigData?.value as RerankerConfig | null;
+    const isRerankEnabled = rerankerConfig?.enabled && rerankerConfig?.provider !== "none";
+
+    // 如果启用重排序，获取更多候选结果
+    const candidateCount = isRerankEnabled ? Math.min(limit * 5, 100) : limit;
+
     const hybridResults = await hybridSearchDocumentChunks(
       supabase,
       query,
       queryEmbedding,
       docId,
       {
-        matchCount: limit,
-        matchThreshold: threshold,
+        matchCount: candidateCount,
+        matchThreshold: isRerankEnabled ? threshold * 0.5 : threshold,
         vectorWeight: 0.5,
       }
     );
 
-    if (hybridResults.length === 0) {
+    // 应用重排序（如果配置启用）
+    const finalResults = await hybridSearchWithReranking(
+      hybridResults.map(r => ({
+        chunk_id: r.chunk_id,
+        document_id: r.document_id,
+        document_title: doc.title,
+        chunk_content: r.chunk_content,
+        chunk_context: r.chunk_context,
+        chunk_index: r.chunk_index,
+        similarity: r.similarity,
+        bm25_rank: r.bm25_rank,
+        vector_rank: r.vector_rank,
+        combined_score: r.combined_score,
+        search_type: r.search_type,
+      })),
+      query,
+      rerankerConfig,
+      limit
+    );
+
+    if (finalResults.length === 0) {
       return NextResponse.json({
         success: true,
         query,
         chunks: [],
         answer: t("api.docTest.noContentFound", locale),
         documentTitle: doc.title,
-        debug: { totalChunks: 0, searchType: "hybrid" },
+        debug: { totalChunks: 0, searchType: "hybrid", reranked: isRerankEnabled },
       });
     }
 
-    const chunksWithSimilarity: ChunkResult[] = hybridResults.map((result) => ({
+    const chunksWithSimilarity: ChunkResult[] = finalResults.map((result) => ({
       chunkId: result.chunk_id,
       chunkIndex: result.chunk_index,
       content: result.chunk_content,
@@ -147,11 +181,14 @@ export async function POST(request: NextRequest) {
     }));
 
     const debug = {
-      totalChunks: hybridResults.length,
+      totalChunks: finalResults.length,
+      candidatesBeforeRerank: hybridResults.length,
       searchType: "hybrid",
+      reranked: isRerankEnabled,
+      rerankerProvider: rerankerConfig?.provider,
       queryEmbeddingLength: queryEmbedding.length,
       threshold,
-      resultTypes: hybridResults.reduce((acc, r) => {
+      resultTypes: finalResults.reduce((acc, r) => {
         acc[r.search_type] = (acc[r.search_type] || 0) + 1;
         return acc;
       }, {} as Record<string, number>),

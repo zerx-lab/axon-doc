@@ -30,6 +30,18 @@ interface ChatConfig {
   temperature: number;
 }
 
+type RerankerProvider = "cohere" | "jina" | "voyage" | "aliyun" | "openai-compatible" | "none";
+type RerankerResponseFormat = "cohere" | "jina" | "voyage" | "aliyun" | "auto";
+
+interface RerankerConfig {
+  provider: RerankerProvider;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  enabled: boolean;
+  responseFormat: RerankerResponseFormat;
+}
+
 const DEFAULT_CONFIG: EmbeddingConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
@@ -89,6 +101,48 @@ const CHAT_PROVIDER_PRESETS: Record<ChatProvider, Partial<ChatConfig>> = {
   },
 };
 
+const DEFAULT_RERANKER_CONFIG: RerankerConfig = {
+  provider: "none",
+  apiKey: "",
+  model: "",
+  baseUrl: "",
+  enabled: false,
+  responseFormat: "auto",
+};
+
+const RERANKER_PROVIDER_PRESETS: Record<RerankerProvider, Partial<RerankerConfig>> = {
+  cohere: {
+    baseUrl: "https://api.cohere.ai/v1/rerank",
+    model: "rerank-english-v3.0",
+    responseFormat: "cohere",
+  },
+  jina: {
+    baseUrl: "https://api.jina.ai/v1/rerank",
+    model: "jina-reranker-v2-base-multilingual",
+    responseFormat: "jina",
+  },
+  voyage: {
+    baseUrl: "https://api.voyageai.com/v1/rerank",
+    model: "rerank-2",
+    responseFormat: "voyage",
+  },
+  aliyun: {
+    baseUrl: "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
+    model: "gte-rerank-v2",
+    responseFormat: "aliyun",
+  },
+  "openai-compatible": {
+    baseUrl: "",
+    model: "",
+    responseFormat: "auto",
+  },
+  none: {
+    baseUrl: "",
+    model: "",
+    responseFormat: "auto",
+  },
+};
+
 export default function SettingsPage() {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -138,11 +192,38 @@ export default function SettingsPage() {
   } | null>(null);
   const [recallError, setRecallError] = useState<string | null>(null);
 
+  const [rerankerConfig, setRerankerConfig] = useState<RerankerConfig>(DEFAULT_RERANKER_CONFIG);
+  const [rerankerLoading, setRerankerLoading] = useState(true);
+  const [rerankerSaving, setRerankerSaving] = useState(false);
+  const [rerankerMessage, setRerankerMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  
+  const [rerankerTestQuery, setRerankerTestQuery] = useState("");
+  const [rerankerTestDocs, setRerankerTestDocs] = useState<string[]>(["", ""]);
+  const [rerankerTesting, setRerankerTesting] = useState(false);
+  const [rerankerTestResult, setRerankerTestResult] = useState<{
+    responseTime: number;
+    results: Array<{
+      originalIndex: number;
+      newRank: number;
+      score: number;
+      document: string;
+    }>;
+    detectedFormat: string;
+    formatConfidence: string;
+    formatReason: string;
+  } | null>(null);
+  const [rerankerTestError, setRerankerTestError] = useState<{ message: string; details?: Record<string, unknown> } | null>(null);
+
   const permissions = user?.permissions || [];
   const canEditSettings = permissions.includes(PERMISSIONS.SYSTEM_SETTINGS) || permissions.includes("*");
 
   const fetchSettings = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      setChatLoading(false);
+      setRerankerLoading(false);
+      return;
+    }
     
     try {
       const embeddingParams = new URLSearchParams({
@@ -166,11 +247,23 @@ export default function SettingsPage() {
       if (chatResult.setting?.value) {
         setChatConfig({ ...DEFAULT_CHAT_CONFIG, ...chatResult.setting.value });
       }
+
+      const rerankerParams = new URLSearchParams({
+        operatorId: user.id,
+        key: "reranker_config",
+      });
+      const rerankerResponse = await fetch(`/api/settings?${rerankerParams}`);
+      const rerankerResult = await rerankerResponse.json();
+      
+      if (rerankerResult.setting?.value) {
+        setRerankerConfig({ ...DEFAULT_RERANKER_CONFIG, ...rerankerResult.setting.value });
+      }
     } catch (error) {
       console.error("Failed to fetch settings:", error);
     } finally {
       setLoading(false);
       setChatLoading(false);
+      setRerankerLoading(false);
     }
   }, [user?.id]);
 
@@ -378,6 +471,120 @@ export default function SettingsPage() {
     const newCandidates = [...candidates];
     newCandidates[index] = value;
     setCandidates(newCandidates);
+  };
+
+  const handleRerankerProviderChange = (provider: RerankerProvider) => {
+    const preset = RERANKER_PROVIDER_PRESETS[provider];
+    setRerankerConfig(prev => ({
+      ...prev,
+      provider,
+      ...preset,
+      enabled: provider !== "none",
+    }));
+  };
+
+  const handleRerankerSave = async () => {
+    if (!user?.id) return;
+    
+    setRerankerSaving(true);
+    setRerankerMessage(null);
+    
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operatorId: user.id,
+          key: "reranker_config",
+          value: rerankerConfig,
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setRerankerMessage({ type: "success", text: t("settings.saveSuccess") });
+        if (result.setting?.value) {
+          setRerankerConfig({ ...DEFAULT_RERANKER_CONFIG, ...result.setting.value });
+        }
+      } else {
+        setRerankerMessage({ type: "error", text: result.error || t("settings.saveFailed") });
+      }
+    } catch {
+      setRerankerMessage({ type: "error", text: t("settings.saveFailed") });
+    } finally {
+      setRerankerSaving(false);
+    }
+  };
+
+  const handleRerankerTest = async () => {
+    const validDocs = rerankerTestDocs.filter(d => d.trim());
+    if (!user?.id || !rerankerTestQuery.trim() || validDocs.length === 0) return;
+    
+    setRerankerTesting(true);
+    setRerankerTestResult(null);
+    setRerankerTestError(null);
+    
+    try {
+      const response = await fetch("/api/reranker/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operatorId: user.id,
+          query: rerankerTestQuery.trim(),
+          documents: validDocs,
+          config: {
+            provider: rerankerConfig.provider,
+            baseUrl: rerankerConfig.baseUrl,
+            apiKey: rerankerConfig.apiKey,
+            model: rerankerConfig.model,
+            responseFormat: rerankerConfig.responseFormat,
+          },
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setRerankerTestResult(result.result);
+      } else {
+        setRerankerTestError({ 
+          message: result.error || t("settings.rerankerTestFailed"),
+          details: result.details,
+        });
+      }
+    } catch {
+      setRerankerTestError({ message: t("settings.rerankerTestFailed") });
+    } finally {
+      setRerankerTesting(false);
+    }
+  };
+
+  const handleAddRerankerTestDoc = () => {
+    if (rerankerTestDocs.length < 10) {
+      setRerankerTestDocs([...rerankerTestDocs, ""]);
+    }
+  };
+
+  const handleRemoveRerankerTestDoc = (index: number) => {
+    if (rerankerTestDocs.length > 1) {
+      setRerankerTestDocs(rerankerTestDocs.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleRerankerTestDocChange = (index: number, value: string) => {
+    const newDocs = [...rerankerTestDocs];
+    newDocs[index] = value;
+    setRerankerTestDocs(newDocs);
+  };
+
+  const applyDetectedFormat = () => {
+    if (rerankerTestResult?.detectedFormat) {
+      setRerankerConfig(prev => ({
+        ...prev,
+        responseFormat: rerankerTestResult.detectedFormat as RerankerResponseFormat,
+      }));
+    }
   };
 
   return (
@@ -900,6 +1107,285 @@ export default function SettingsPage() {
                 <div className="flex justify-end">
                   <Button onClick={handleChatSave} disabled={chatSaving}>
                     {chatSaving ? t("common.saving") : t("common.save")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canEditSettings && (
+          <div className="border border-border p-6">
+            <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted">
+              {t("settings.rerankerConfig")}
+            </h2>
+            
+            {rerankerLoading ? (
+              <div className="py-8 text-center text-muted">{t("common.loading")}</div>
+            ) : (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block font-mono text-xs text-foreground">
+                      {t("settings.rerankerEnabled")}
+                    </label>
+                    <p className="mt-1 font-mono text-[10px] text-muted">
+                      {t("settings.rerankerEnabledDesc")}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setRerankerConfig(prev => ({ 
+                      ...prev, 
+                      enabled: !prev.enabled,
+                      provider: !prev.enabled && prev.provider === "none" ? "cohere" : prev.provider
+                    }))}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      rerankerConfig.enabled ? "bg-green-500" : "bg-muted/30"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        rerankerConfig.enabled ? "left-[22px]" : "left-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {rerankerConfig.enabled && (
+                  <>
+                    <div>
+                      <label className="mb-2 block font-mono text-xs text-muted">
+                        {t("settings.rerankerProvider")}
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {(["cohere", "jina", "voyage", "aliyun", "openai-compatible"] as const).map((p) => (
+                          <OptionButton
+                            key={p}
+                            selected={rerankerConfig.provider === p}
+                            onClick={() => handleRerankerProviderChange(p)}
+                            label={t(`settings.rerankerProvider_${p}`)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block font-mono text-xs text-muted">
+                          {t("settings.rerankerBaseUrl")}
+                        </label>
+                        <Input
+                          value={rerankerConfig.baseUrl}
+                          onChange={(e) => setRerankerConfig(prev => ({ ...prev, baseUrl: e.target.value }))}
+                          placeholder="https://api.cohere.ai/v1/rerank"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-2 block font-mono text-xs text-muted">
+                          {t("settings.rerankerApiKey")}
+                        </label>
+                        <Input
+                          type="password"
+                          value={rerankerConfig.apiKey}
+                          onChange={(e) => setRerankerConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                          placeholder={t("settings.apiKeyPlaceholder")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block font-mono text-xs text-muted">
+                          {t("settings.rerankerModel")}
+                        </label>
+                        <Input
+                          value={rerankerConfig.model}
+                          onChange={(e) => setRerankerConfig(prev => ({ ...prev, model: e.target.value }))}
+                          placeholder="rerank-english-v3.0"
+                        />
+                      </div>
+                      {rerankerConfig.provider === "openai-compatible" && (
+                        <div>
+                          <label className="mb-2 block font-mono text-xs text-muted">
+                            {t("settings.rerankerResponseFormat")}
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {(["auto", "cohere", "jina", "voyage", "aliyun"] as const).map((f) => (
+                              <OptionButton
+                                key={f}
+                                selected={rerankerConfig.responseFormat === f}
+                                onClick={() => setRerankerConfig(prev => ({ ...prev, responseFormat: f }))}
+                                label={t(`settings.rerankerResponseFormat_${f}`)}
+                              />
+                            ))}
+                          </div>
+                          <p className="mt-2 font-mono text-[10px] text-muted">
+                            {t("settings.rerankerResponseFormatDesc")}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t border-border pt-6">
+                      <div className="mb-4">
+                        <label className="mb-1 block font-mono text-xs text-muted">
+                          {t("settings.testReranker")}
+                        </label>
+                        <p className="font-mono text-[10px] text-muted/70">
+                          {t("settings.rerankerTestDesc")}
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-2 block font-mono text-xs text-muted">
+                            {t("settings.rerankerTestQuery")}
+                          </label>
+                          <Input
+                            value={rerankerTestQuery}
+                            onChange={(e) => setRerankerTestQuery(e.target.value)}
+                            placeholder={t("settings.rerankerTestQueryPlaceholder")}
+                          />
+                        </div>
+                        
+                        <div>
+                          <div className="mb-2 flex items-center justify-between">
+                            <label className="font-mono text-xs text-muted">
+                              {t("settings.rerankerTestDocument")}
+                            </label>
+                            <Button
+                              onClick={handleAddRerankerTestDoc}
+                              variant="ghost"
+                              disabled={rerankerTestDocs.length >= 10}
+                              className="h-6 px-2 text-[10px]"
+                            >
+                              + {t("settings.addCandidate")}
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {rerankerTestDocs.map((doc, index) => (
+                              <div key={index} className="flex gap-2">
+                                <div className="flex h-10 w-6 shrink-0 items-center justify-center font-mono text-[10px] text-muted">
+                                  {index + 1}
+                                </div>
+                                <Input
+                                  value={doc}
+                                  onChange={(e) => handleRerankerTestDocChange(index, e.target.value)}
+                                  placeholder={t("settings.rerankerTestDocPlaceholder")}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  onClick={() => handleRemoveRerankerTestDoc(index)}
+                                  variant="ghost"
+                                  disabled={rerankerTestDocs.length <= 1}
+                                  className="h-10 w-10 shrink-0 p-0 text-muted hover:text-red-500"
+                                >
+                                  ×
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-end">
+                          <Button 
+                            onClick={handleRerankerTest} 
+                            disabled={rerankerTesting || !rerankerTestQuery.trim() || rerankerTestDocs.filter(d => d.trim()).length === 0}
+                            variant="secondary"
+                          >
+                            {rerankerTesting ? t("settings.rerankerTesting") : t("settings.testReranker")}
+                          </Button>
+                        </div>
+                        
+                        {rerankerTestError && (
+                          <div className="space-y-2 rounded border border-red-500/30 bg-red-500/5 p-3">
+                            <div className="font-mono text-xs text-red-500">
+                              {rerankerTestError.message}
+                            </div>
+                            {rerankerTestError.details && (
+                              <div className="space-y-1 font-mono text-[10px] text-muted">
+                                {"url" in rerankerTestError.details && (
+                                  <div>URL: {rerankerTestError.details.url as string}</div>
+                                )}
+                                {"model" in rerankerTestError.details && (
+                                  <div>Model: {rerankerTestError.details.model as string}</div>
+                                )}
+                                {"provider" in rerankerTestError.details && (
+                                  <div>Provider: {rerankerTestError.details.provider as string}</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {rerankerTestResult && (
+                          <div className="space-y-3 rounded border border-green-500/30 bg-green-500/5 p-4">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-xs text-green-500">
+                                {t("settings.rerankerTestSuccess")}
+                              </span>
+                              <span className="font-mono text-[10px] text-muted">
+                                {rerankerTestResult.responseTime}ms
+                              </span>
+                            </div>
+                            
+                            {rerankerConfig.provider === "openai-compatible" && (
+                              <div className="rounded border border-blue-500/30 bg-blue-500/5 p-3">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <span className="font-mono text-[10px] text-blue-500">
+                                    {t("settings.detectedFormat")}: {rerankerTestResult.detectedFormat}
+                                    <span className="ml-2 text-muted">({rerankerTestResult.formatConfidence})</span>
+                                  </span>
+                                  {rerankerTestResult.detectedFormat !== rerankerConfig.responseFormat && (
+                                    <Button
+                                      onClick={applyDetectedFormat}
+                                      variant="ghost"
+                                      className="h-6 px-2 text-[10px] text-blue-500"
+                                    >
+                                      {t("settings.applyFormat")}
+                                    </Button>
+                                  )}
+                                </div>
+                                <p className="font-mono text-[10px] text-muted">
+                                  {rerankerTestResult.formatReason}
+                                </p>
+                              </div>
+                            )}
+                            
+                            <div className="space-y-2">
+                              <span className="font-mono text-[10px] text-muted">{t("settings.rerankerResults")}:</span>
+                              {rerankerTestResult.results.map((item, index) => (
+                                <div key={index} className="flex items-start gap-3 rounded border border-border bg-background p-3">
+                                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/20 font-mono text-[10px] font-medium">
+                                    {item.newRank}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-words font-mono text-xs">
+                                      {item.document.length > 100 ? item.document.slice(0, 100) + "..." : item.document}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 rounded bg-green-500/20 px-2 py-0.5 font-mono text-[10px] text-green-500">
+                                    {(item.score * 100).toFixed(1)}%
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {rerankerMessage && (
+                  <div className={`font-mono text-xs ${rerankerMessage.type === "success" ? "text-green-500" : "text-red-500"}`}>
+                    {rerankerMessage.text}
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={handleRerankerSave} disabled={rerankerSaving}>
+                    {rerankerSaving ? t("common.saving") : t("common.save")}
                   </Button>
                 </div>
               </div>

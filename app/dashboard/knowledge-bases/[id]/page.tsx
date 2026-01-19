@@ -28,11 +28,30 @@ interface KnowledgeBase {
 
 type DialogType = "create" | "edit" | "delete" | "preview" | "test" | null;
 
+type SearchType = "vector" | "bm25" | "hybrid";
+
 interface ChunkResult {
   chunkId: string;
   chunkIndex: number;
   content: string;
+  context: string | null;
   similarity: number;
+  searchType: SearchType;
+  combinedScore: number;
+  bm25Rank: number | null;
+  vectorRank: number | null;
+}
+
+interface DebugInfo {
+  contextEnabled: boolean;
+  hybridSearchUsed: boolean;
+  rerankEnabled: boolean;
+  totalChunks: number;
+  candidatesBeforeRerank: number;
+  searchType: string;
+  rerankerProvider: string | null;
+  embeddingModel: string;
+  resultTypes: Record<string, number>;
 }
 
 interface TestResult {
@@ -45,6 +64,7 @@ interface TestResult {
     inputTokens?: number;
     outputTokens?: number;
   };
+  debug?: DebugInfo;
 }
 
 export default function DocumentsPage() {
@@ -320,6 +340,7 @@ export default function DocumentsPage() {
                   documentTitle: eventData.documentTitle,
                   chunks: eventData.chunks,
                   answer: "",
+                  debug: eventData.debug,
                 });
                 break;
 
@@ -858,6 +879,45 @@ export default function DocumentsPage() {
           <div className="flex-1 overflow-y-auto space-y-4">
             {testResult && (
               <>
+                {testResult.debug && (
+                  <div className="border border-border bg-card/50 p-4">
+                    <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted">
+                      {t("docTest.ragPipeline")}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <PipelineStep
+                        label={t("docTest.contextEnhance")}
+                        active={testResult.debug.contextEnabled}
+                        icon={<ContextIcon className="h-3 w-3" />}
+                      />
+                      <PipelineArrow />
+                      <PipelineStep
+                        label={t("docTest.hybridSearch")}
+                        active={testResult.debug.hybridSearchUsed}
+                        icon={<SearchIcon className="h-3 w-3" />}
+                        detail={testResult.debug.resultTypes ? 
+                          `V:${testResult.debug.resultTypes.vector || 0} B:${testResult.debug.resultTypes.bm25 || 0} H:${testResult.debug.resultTypes.hybrid || 0}` 
+                          : undefined}
+                      />
+                      <PipelineArrow />
+                      <PipelineStep
+                        label={t("docTest.rerank")}
+                        active={testResult.debug.rerankEnabled}
+                        icon={<RerankIcon className="h-3 w-3" />}
+                        detail={testResult.debug.rerankEnabled ? 
+                          `${testResult.debug.candidatesBeforeRerank} → ${testResult.debug.totalChunks}` 
+                          : undefined}
+                      />
+                    </div>
+                    <div className="mt-3 flex gap-4 text-[10px] text-muted">
+                      <span>{t("docTest.embeddingModel")}: {testResult.debug.embeddingModel}</span>
+                      {testResult.debug.rerankerProvider && (
+                        <span>{t("docTest.rerankerModel")}: {testResult.debug.rerankerProvider}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="border border-border bg-card p-4">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
@@ -903,20 +963,45 @@ export default function DocumentsPage() {
                     <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
                       {testResult.chunks.map((chunk, index) => (
                         <div key={chunk.chunkId} className="p-4">
-                          <div className="mb-2 flex items-center justify-between">
-                            <span className="font-mono text-[10px] text-muted">
-                              {t("docTest.fragment")} #{index + 1} (Index: {chunk.chunkIndex})
-                            </span>
-                            <span className={`font-mono text-[10px] px-2 py-0.5 border ${
-                              chunk.similarity >= 0.8
-                                ? "border-green-500/50 bg-green-500/10 text-green-500"
-                                : chunk.similarity >= 0.6
-                                ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-500"
-                                : "border-border bg-muted/10 text-muted"
-                            }`}>
-                              {t("search.similarity")}: {(chunk.similarity * 100).toFixed(1)}%
-                            </span>
+                          <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-muted">
+                                {t("docTest.fragment")} #{index + 1}
+                              </span>
+                              <SearchTypeBadge type={chunk.searchType} t={t} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {chunk.vectorRank && (
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 border border-blue-500/30 bg-blue-500/5 text-blue-400">
+                                  V#{chunk.vectorRank}
+                                </span>
+                              )}
+                              {chunk.bm25Rank && (
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 border border-orange-500/30 bg-orange-500/5 text-orange-400">
+                                  B#{chunk.bm25Rank}
+                                </span>
+                              )}
+                              <span className={`font-mono text-[10px] px-2 py-0.5 border ${
+                                chunk.combinedScore >= 0.03
+                                  ? "border-green-500/50 bg-green-500/10 text-green-500"
+                                  : chunk.combinedScore >= 0.02
+                                  ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-500"
+                                  : "border-border bg-muted/10 text-muted"
+                              }`}>
+                                {t("docTest.score")}: {chunk.combinedScore.toFixed(4)}
+                              </span>
+                            </div>
                           </div>
+                          {chunk.context && (
+                            <div className="mb-2 border-l-2 border-purple-500/50 pl-2">
+                              <span className="font-mono text-[9px] uppercase tracking-widest text-purple-400">
+                                {t("docTest.context")}
+                              </span>
+                              <p className="font-mono text-[10px] text-purple-300/70 line-clamp-2">
+                                {chunk.context}
+                              </p>
+                            </div>
+                          )}
                           <p className="font-mono text-xs text-muted whitespace-pre-wrap line-clamp-4">
                             {chunk.content}
                           </p>
@@ -1028,5 +1113,92 @@ function ChatIcon({ className }: { readonly className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
+  );
+}
+
+function ContextIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M4 6h16M4 12h16M4 18h10" />
+    </svg>
+  );
+}
+
+function SearchIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="11" cy="11" r="8" />
+      <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
+
+function RerankIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 6h18M3 12h12M3 18h6" />
+    </svg>
+  );
+}
+
+interface PipelineStepProps {
+  readonly label: string;
+  readonly active: boolean;
+  readonly icon: React.ReactNode;
+  readonly detail?: string;
+}
+
+function PipelineStep({ label, active, icon, detail }: PipelineStepProps) {
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 border font-mono text-[10px] ${
+      active
+        ? "border-green-500/50 bg-green-500/10 text-green-400"
+        : "border-border bg-muted/10 text-muted"
+    }`}>
+      {icon}
+      <span className="uppercase tracking-wider">{label}</span>
+      {active && <CheckIcon className="h-2.5 w-2.5" />}
+      {detail && <span className="text-[9px] opacity-70">({detail})</span>}
+    </div>
+  );
+}
+
+function PipelineArrow() {
+  return (
+    <svg className="h-3 w-3 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+interface SearchTypeBadgeProps {
+  readonly type: SearchType;
+  readonly t: (key: string) => string;
+}
+
+function SearchTypeBadge({ type, t }: SearchTypeBadgeProps) {
+  const styleMap = {
+    vector: "border-blue-500/30 bg-blue-500/10 text-blue-400",
+    bm25: "border-orange-500/30 bg-orange-500/10 text-orange-400",
+    hybrid: "border-purple-500/30 bg-purple-500/10 text-purple-400",
+  };
+  const labelMap = {
+    vector: t("docTest.typeVector"),
+    bm25: t("docTest.typeBm25"),
+    hybrid: t("docTest.typeHybrid"),
+  };
+  
+  return (
+    <span className={`font-mono text-[9px] uppercase px-1.5 py-0.5 border ${styleMap[type]}`}>
+      {labelMap[type]}
+    </span>
   );
 }

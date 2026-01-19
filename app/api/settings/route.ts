@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
       const valueObj = data.value as JsonObject;
       const sanitizedValue = { ...valueObj };
-      if ((key === "embedding_config" || key === "chat_config") && sanitizedValue.apiKey) {
+      if ((key === "embedding_config" || key === "chat_config" || key === "reranker_config") && sanitizedValue.apiKey) {
         sanitizedValue.apiKey = "********";
       }
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     const sanitizedData = data?.map(setting => {
       const valueObj = setting.value as JsonObject;
       const sanitizedValue = { ...valueObj };
-      if ((setting.key === "embedding_config" || setting.key === "chat_config") && sanitizedValue.apiKey) {
+      if ((setting.key === "embedding_config" || setting.key === "chat_config" || setting.key === "reranker_config") && sanitizedValue.apiKey) {
         sanitizedValue.apiKey = "********";
       }
       return { ...setting, value: sanitizedValue };
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     let finalValue = value;
-    if ((key === "embedding_config" || key === "chat_config") && existing?.value) {
+    if ((key === "embedding_config" || key === "chat_config" || key === "reranker_config") && existing?.value) {
       const existingValue = existing.value as JsonObject;
       finalValue = { ...value };
       if (finalValue.apiKey === "********" || finalValue.apiKey === "") {
@@ -123,7 +123,7 @@ export async function PATCH(request: NextRequest) {
 
     const resultValue = data.value as JsonObject;
     const sanitizedValue = { ...resultValue };
-    if ((key === "embedding_config" || key === "chat_config") && sanitizedValue.apiKey) {
+    if ((key === "embedding_config" || key === "chat_config" || key === "reranker_config") && sanitizedValue.apiKey) {
       sanitizedValue.apiKey = "********";
     }
 

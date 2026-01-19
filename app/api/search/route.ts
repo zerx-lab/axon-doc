@@ -91,15 +91,17 @@ export async function POST(request: NextRequest) {
         Math.max(0, Math.min(vectorWeight, 1))
       );
 
-      if (candidates.length > 0) {
+      if (candidates.length > 0 && rerankerConfig.provider !== "none") {
         const rerankedResults = await rerankChunks(
           query,
           candidates,
           {
-            provider: rerankerConfig.provider === "none" ? "local-bge" : rerankerConfig.provider,
+            provider: rerankerConfig.provider,
             apiKey: rerankerConfig.apiKey,
             model: rerankerConfig.model,
             baseUrl: rerankerConfig.baseUrl,
+            responseFormat: rerankerConfig.responseFormat,
+            customHeaders: rerankerConfig.customHeaders,
           },
           { topK: limit }
         );

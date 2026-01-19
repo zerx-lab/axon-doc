@@ -6,12 +6,13 @@ import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { ChatConfig, SearchType } from "@/lib/supabase/types";
+import type { ChatConfig, SearchType, RerankerConfig } from "@/lib/supabase/types";
 import {
   generateSingleEmbedding,
   getEmbeddingConfig,
   hybridSearchDocumentChunks,
 } from "@/lib/embeddings";
+import { hybridSearchWithReranking } from "@/lib/reranker";
 import {
   t,
   parseLocale,
@@ -33,9 +34,24 @@ interface ChunkResult {
   chunkId: string;
   chunkIndex: number;
   content: string;
+  context: string | null;
   similarity: number;
-  searchType?: SearchType;
-  combinedScore?: number;
+  searchType: SearchType;
+  combinedScore: number;
+  bm25Rank: number | null;
+  vectorRank: number | null;
+}
+
+interface DebugInfo {
+  contextEnabled: boolean;
+  hybridSearchUsed: boolean;
+  rerankEnabled: boolean;
+  totalChunks: number;
+  candidatesBeforeRerank: number;
+  searchType: string;
+  rerankerProvider: string | null;
+  embeddingModel: string;
+  resultTypes: Record<string, number>;
 }
 
 function createChatProvider(config: ChatConfig) {
@@ -116,42 +132,80 @@ export async function POST(request: NextRequest) {
     const embeddingConfig = await getEmbeddingConfig(supabase);
     const queryEmbedding = await generateSingleEmbedding(query, embeddingConfig);
 
+    // 获取重排序配置
+    const { data: rerankerConfigData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "reranker_config")
+      .single();
+    
+    const rerankerConfig = rerankerConfigData?.value as RerankerConfig | null;
+
+    // 如果启用重排序，获取更多候选结果
+    const candidateCount = rerankerConfig?.enabled ? Math.min(limit * 5, 100) : limit;
+
     const hybridResults = await hybridSearchDocumentChunks(
       supabase,
       query,
       queryEmbedding,
       docId,
       {
-        matchCount: limit,
-        matchThreshold: threshold,
+        matchCount: candidateCount,
+        matchThreshold: threshold * 0.5, // 降低阈值以获取更多候选
         vectorWeight: 0.5,
       }
     );
 
-    if (hybridResults.length === 0) {
-      return new Response(
-        JSON.stringify({
-          type: "complete",
-          success: true,
-          query,
-          chunks: [],
-          answer: t("api.docTest.noContentFound", locale),
-          documentTitle: doc.title,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    // 应用重排序（如果配置启用）
+    const finalResults = await hybridSearchWithReranking(
+      hybridResults.map(r => ({
+        chunk_id: r.chunk_id,
+        document_id: r.document_id,
+        document_title: doc.title,
+        chunk_content: r.chunk_content,
+        chunk_context: r.chunk_context,
+        chunk_index: r.chunk_index,
+        similarity: r.similarity,
+        bm25_rank: r.bm25_rank,
+        vector_rank: r.vector_rank,
+        combined_score: r.combined_score,
+        search_type: r.search_type,
+      })),
+      query,
+      rerankerConfig,
+      limit
+    );
 
-    const chunksWithSimilarity: ChunkResult[] = hybridResults.map((result) => ({
+    const isRerankEnabled = rerankerConfig?.enabled && rerankerConfig?.provider !== "none";
+    
+    const chunksWithSimilarity: ChunkResult[] = finalResults.map((result) => ({
       chunkId: result.chunk_id,
       chunkIndex: result.chunk_index,
       content: result.chunk_content,
+      context: result.chunk_context,
       similarity: result.similarity,
       searchType: result.search_type,
       combinedScore: result.combined_score,
+      bm25Rank: result.bm25_rank,
+      vectorRank: result.vector_rank,
     }));
 
-    return streamAnswer(supabase, query, chunksWithSimilarity, doc.title, locale);
+    const debugInfo: DebugInfo = {
+      contextEnabled: embeddingConfig.contextEnabled ?? false,
+      hybridSearchUsed: true,
+      rerankEnabled: isRerankEnabled ?? false,
+      totalChunks: finalResults.length,
+      candidatesBeforeRerank: hybridResults.length,
+      searchType: "hybrid",
+      rerankerProvider: isRerankEnabled ? (rerankerConfig?.provider ?? null) : null,
+      embeddingModel: embeddingConfig.model,
+      resultTypes: finalResults.reduce((acc, r) => {
+        acc[r.search_type] = (acc[r.search_type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+    };
+
+    return streamAnswer(supabase, query, chunksWithSimilarity, doc.title, locale, debugInfo);
   } catch (error) {
     console.error("Document test stream error:", error);
     const errorMessage = error instanceof Error 
@@ -171,7 +225,8 @@ async function streamAnswer(
   query: string,
   chunks: ChunkResult[],
   documentTitle: string,
-  locale: Locale
+  locale: Locale,
+  debugInfo: DebugInfo
 ): Promise<Response> {
   const encoder = new TextEncoder();
   const startTime = Date.now();
@@ -191,6 +246,7 @@ async function streamAnswer(
         documentTitle,
         chunks,
         startTime,
+        debug: debugInfo,
       });
 
       if (chunks.length === 0) {
