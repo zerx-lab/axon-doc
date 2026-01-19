@@ -201,6 +201,9 @@ export async function generateSingleEmbedding(
   settings: EmbeddingConfig = DEFAULT_EMBEDDING_CONFIG
 ): Promise<number[]> {
   const embeddings = await generateEmbeddings([text], settings);
+  if (!embeddings || embeddings.length === 0) {
+    throw new Error("Failed to generate embedding: empty result returned");
+  }
   return embeddings[0];
 }
 

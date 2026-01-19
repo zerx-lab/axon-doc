@@ -1,9 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { CrawlJob, CrawlPage } from "@/lib/supabase/types";
+import { validateUrl } from "@/lib/validation";
 
 const CRAWLER_SERVICE_URL =
   process.env.CRAWLER_SERVICE_URL || "http://localhost:8001";
+
+// Timeout for crawler service requests (ms)
+const CRAWLER_REQUEST_TIMEOUT = 30000;
+
+/**
+ * Helper to fetch with timeout
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = CRAWLER_REQUEST_TIMEOUT
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 interface CrawlRequestBody {
   url: string;
@@ -91,13 +117,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate URL to prevent SSRF attacks
+    const urlValidation = validateUrl(body.url);
+    if (!urlValidation.valid) {
+      return NextResponse.json(
+        { error: urlValidation.error || "Invalid URL" },
+        { status: 400 }
+      );
+    }
+
+    // Validate max_depth and max_pages to prevent abuse
+    const maxDepth = Math.min(Math.max(body.max_depth || 3, 1), 10);
+    const maxPages = Math.min(Math.max(body.max_pages || 100, 1), 1000);
+
     const mode = body.mode || "single_url";
     const endpoint =
       mode === "single_url"
         ? `${CRAWLER_SERVICE_URL}/crawl/sync`
         : `${CRAWLER_SERVICE_URL}/crawl/async`;
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -106,8 +145,8 @@ export async function POST(request: NextRequest) {
         kb_id: body.kb_id,
         user_id: body.user_id,
         source_label: body.source_label,
-        max_depth: body.max_depth || 3,
-        max_pages: body.max_pages || 100,
+        max_depth: maxDepth,
+        max_pages: maxPages,
         use_ai: body.use_ai ?? true,
         extraction_mode: body.extraction_mode || "auto",
         extraction_prompt: body.extraction_prompt,
@@ -130,6 +169,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Crawl API error:", error);
+    // Check if it's a timeout error
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json(
+        { error: "Crawler service request timed out" },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to connect to crawler service" },
       { status: 503 }
@@ -180,16 +226,21 @@ export async function PATCH(request: NextRequest) {
     const newStatus = action === "pause" ? "paused" : "running";
 
     try {
-      const response = await fetch(`${CRAWLER_SERVICE_URL}/crawl/job/${job_id}/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await fetchWithTimeout(
+        `${CRAWLER_SERVICE_URL}/crawl/job/${job_id}/${action}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+        10000 // 10s timeout for control operations
+      );
 
       if (!response.ok && response.status !== 404) {
         const data = await response.json().catch(() => ({}));
         console.warn(`Crawler service returned ${response.status} for ${action}:`, data);
       }
     } catch (fetchError) {
+      // Silently handle timeout or connection errors for control operations
       console.warn(`Crawler service unavailable for ${action}:`, fetchError);
     }
     
@@ -241,16 +292,21 @@ export async function DELETE(request: NextRequest) {
     }
 
     try {
-      const response = await fetch(`${CRAWLER_SERVICE_URL}/crawl/job/${jobId}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await fetchWithTimeout(
+        `${CRAWLER_SERVICE_URL}/crawl/job/${jobId}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+        10000 // 10s timeout for control operations
+      );
 
       if (!response.ok && response.status !== 404) {
         const data = await response.json().catch(() => ({}));
         console.warn(`Crawler service returned ${response.status} for cancel:`, data);
       }
     } catch (fetchError) {
+      // Silently handle timeout or connection errors for control operations
       console.warn("Crawler service unavailable for cancel:", fetchError);
     }
     

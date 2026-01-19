@@ -1,4 +1,4 @@
--- AxonBase Complete Database Schema
+-- AxonDoc Complete Database Schema
 -- Unified migration for development (合并所有迁移文件，便于开发迭代)
 
 -- ============================================

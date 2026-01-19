@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/🧠-AxonBase-667eea?style=for-the-badge&labelColor=764ba2" alt="AxonBase" height="40"/>
+<img src="https://img.shields.io/badge/🧠-AxonDoc-667eea?style=for-the-badge&labelColor=764ba2" alt="AxonDoc" height="40"/>
 
 <br/>
 <br/>
 
-# AxonBase
+# AxonDoc
 
 ### 🚀 AI 驱动的企业级智能知识库系统
 
@@ -40,9 +40,9 @@
 
 ## 🎯 项目简介
 
-**AxonBase** 是一个功能完整的企业级知识库和 AI 对话系统，集成了先进的 RAG（检索增强生成）技术。它支持多知识库管理、智能网页爬虫、混合检索、多模型 AI 对话等核心功能，为企业提供强大的知识管理和智能问答能力。
+**AxonDoc** 是一个功能完整的企业级知识库和 AI 对话系统，集成了先进的 RAG（检索增强生成）技术。它支持多知识库管理、智能网页爬虫、混合检索、多模型 AI 对话等核心功能，为企业提供强大的知识管理和智能问答能力。
 
-### 为什么选择 AxonBase？
+### 为什么选择 AxonDoc？
 
 - 🔥 **开箱即用** - 完整的前后端解决方案，Docker 一键部署
 - 🧠 **智能检索** - 向量搜索 + BM25 + RRF 融合 + 重排序，精准召回
@@ -189,8 +189,8 @@
 ### 1️⃣ 克隆项目
 
 ```bash
-git clone https://github.com/your-org/axon-base.git
-cd axon-base
+git clone https://github.com/your-org/axon-doc.git
+cd axon-doc
 bun install
 ```
 
@@ -299,7 +299,7 @@ uv run main.py
 ## 📁 项目结构
 
 ```
-axon-base/
+axon-doc/
 ├── 📂 app/                           # Next.js App Router
 │   ├── 📂 api/                       # API 路由 (70+ 端点)
 │   │   ├── 📂 auth/                  # 认证 (登录/登出/验证)
@@ -492,7 +492,7 @@ axon-base/
 
 <div align="center">
 
-**[⬆ 回到顶部](#axonbase)**
+**[⬆ 回到顶部](#axondoc)**
 
 <br/>
 

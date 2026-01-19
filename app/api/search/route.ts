@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     
     let results: HybridSearchChunk[];
     let reranked = false;
+    let degraded = false;
 
     if (enableReranking && rerankerConfig?.enabled && rerankerConfig.apiKey) {
       const candidates = await hybridSearchForReranking(
@@ -92,36 +93,43 @@ export async function POST(request: NextRequest) {
       );
 
       if (candidates.length > 0 && rerankerConfig.provider !== "none") {
-        const rerankedResults = await rerankChunks(
-          query,
-          candidates,
-          {
-            provider: rerankerConfig.provider,
-            apiKey: rerankerConfig.apiKey,
-            model: rerankerConfig.model,
-            baseUrl: rerankerConfig.baseUrl,
-            responseFormat: rerankerConfig.responseFormat,
-            customHeaders: rerankerConfig.customHeaders,
-          },
-          { topK: limit }
-        );
+        try {
+          const rerankedResults = await rerankChunks(
+            query,
+            candidates,
+            {
+              provider: rerankerConfig.provider,
+              apiKey: rerankerConfig.apiKey,
+              model: rerankerConfig.model,
+              baseUrl: rerankerConfig.baseUrl,
+              responseFormat: rerankerConfig.responseFormat,
+              customHeaders: rerankerConfig.customHeaders,
+            },
+            { topK: limit }
+          );
 
-        results = rerankedResults.map(r => ({
-          chunk_id: r.chunk.chunk_id,
-          document_id: r.chunk.document_id,
-          document_title: r.chunk.document_title,
-          chunk_content: r.chunk.chunk_content,
-          chunk_context: r.chunk.chunk_context,
-          chunk_index: r.chunk.chunk_index,
-          similarity: r.chunk.similarity,
-          bm25_rank: r.chunk.bm25_rank,
-          vector_rank: r.chunk.vector_rank,
-          combined_score: r.relevanceScore,
-          search_type: r.chunk.search_type,
-        }));
-        reranked = true;
+          results = rerankedResults.map(r => ({
+            chunk_id: r.chunk.chunk_id,
+            document_id: r.chunk.document_id,
+            document_title: r.chunk.document_title,
+            chunk_content: r.chunk.chunk_content,
+            chunk_context: r.chunk.chunk_context,
+            chunk_index: r.chunk.chunk_index,
+            similarity: r.chunk.similarity,
+            bm25_rank: r.chunk.bm25_rank,
+            vector_rank: r.chunk.vector_rank,
+            combined_score: r.relevanceScore,
+            search_type: r.chunk.search_type,
+          }));
+          reranked = true;
+        } catch (rerankError) {
+          // Reranking failed - silently fallback to hybrid search results
+          console.debug("Reranking failed, falling back to candidates:", rerankError);
+          results = candidates.slice(0, limit);
+          degraded = true;
+        }
       } else {
-        results = [];
+        results = candidates.slice(0, limit);
       }
     } else {
       results = await hybridSearchChunks(
@@ -186,6 +194,7 @@ export async function POST(request: NextRequest) {
       query,
       searchType,
       reranked,
+      degraded,
       results: documents,
       totalChunks: results.length,
       stats: searchStats,

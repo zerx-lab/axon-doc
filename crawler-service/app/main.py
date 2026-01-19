@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="Crawler Service",
-    description="Web crawling service for AxonBase knowledge base with adaptive AI-powered extraction",
+    description="Web crawling service for AxonDoc knowledge base with adaptive AI-powered extraction",
     version="0.2.0",
     lifespan=lifespan,
 )

@@ -4,37 +4,7 @@ import { toSafeUser, hasPermission, canManageUser, isSuperAdmin } from "@/lib/su
 import { Permissions } from "@/lib/supabase/permissions";
 import type { User } from "@/lib/supabase/types";
 import bcrypt from "bcryptjs";
-
-/**
- * Escape special characters for Supabase ilike queries
- * Prevents SQL injection by escaping %, _, and \
- */
-function escapeSearchPattern(input: string): string {
-  return input
-    .replace(/\\/g, "\\\\")  // Escape backslash first
-    .replace(/%/g, "\\%")    // Escape percent
-    .replace(/_/g, "\\_");   // Escape underscore
-}
-
-/**
- * Validate password strength
- * Requirements: minimum 8 characters, at least one uppercase, one lowercase, one digit
- */
-function validatePassword(password: string): { valid: boolean; error?: string } {
-  if (password.length < 8) {
-    return { valid: false, error: "Password must be at least 8 characters long" };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one lowercase letter" };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one uppercase letter" };
-  }
-  if (!/\d/.test(password)) {
-    return { valid: false, error: "Password must contain at least one digit" };
-  }
-  return { valid: true };
-}
+import { escapeSearchPattern, validatePassword, validatePagination } from "@/lib/validation";
 
 // GET /api/admin/users - List users
 export async function GET(request: NextRequest) {
@@ -42,8 +12,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const operatorId = searchParams.get("operatorId");
     const search = searchParams.get("search") || "";
-    const limit = parseInt(searchParams.get("limit") || "20");
-    const page = parseInt(searchParams.get("page") || "1");
+    const { limit, page, offset } = validatePagination(
+      searchParams.get("limit"),
+      searchParams.get("page"),
+      { maxLimit: 100, defaultLimit: 20 }
+    );
 
     if (!operatorId) {
       return NextResponse.json(
@@ -79,7 +52,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply pagination
-    const offset = (page - 1) * limit;
     query = query.range(offset, offset + limit - 1).order("created_at", { ascending: false });
 
     const { data: users, error, count } = await query;

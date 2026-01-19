@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 应用重排序（如果配置启用）
-    const finalResults = await hybridSearchWithReranking(
+    const rerankResult = await hybridSearchWithReranking(
       hybridResults.map(r => ({
         chunk_id: r.chunk_id,
         document_id: r.document_id,
@@ -161,6 +161,8 @@ export async function POST(request: NextRequest) {
       limit
     );
 
+    const finalResults = rerankResult.chunks;
+
     if (finalResults.length === 0) {
       return NextResponse.json({
         success: true,
@@ -168,7 +170,7 @@ export async function POST(request: NextRequest) {
         chunks: [],
         answer: t("api.docTest.noContentFound", locale),
         documentTitle: doc.title,
-        debug: { totalChunks: 0, searchType: "hybrid", reranked: isRerankEnabled },
+        debug: { totalChunks: 0, searchType: "hybrid", reranked: rerankResult.reranked, degraded: rerankResult.degraded },
       });
     }
 
@@ -185,7 +187,8 @@ export async function POST(request: NextRequest) {
       totalChunks: finalResults.length,
       candidatesBeforeRerank: hybridResults.length,
       searchType: "hybrid",
-      reranked: isRerankEnabled,
+      reranked: rerankResult.reranked,
+      degraded: rerankResult.degraded,
       rerankerProvider: rerankerConfig?.provider,
       queryEmbeddingLength: queryEmbedding.length,
       threshold,

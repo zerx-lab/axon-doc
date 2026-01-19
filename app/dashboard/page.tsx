@@ -134,7 +134,7 @@ export default function DashboardPage() {
               <div>
                 <p className="font-mono text-xs">{t("dashboard.systemInitialized")}</p>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  {t("dashboard.welcomeToAxonBase")}
+                  {t("dashboard.welcomeToAxonDoc")}
                 </p>
               </div>
             </div>
@@ -147,7 +147,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <div className="h-px w-8 bg-border" />
           <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
-            AxonBase v1.0
+            AxonDoc v1.0
           </span>
           <div className="h-px w-8 bg-border" />
         </div>

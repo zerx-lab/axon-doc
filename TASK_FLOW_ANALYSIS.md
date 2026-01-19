@@ -1,8 +1,8 @@
-# AxonBase Crawl Task Management Flow - Comprehensive Analysis
+# AxonDoc Crawl Task Management Flow - Comprehensive Analysis
 
 ## Executive Summary
 
-The AxonBase knowledge base system implements a **client-side task queue with server-side background job execution**. Tasks are managed in the frontend React context, while actual crawl operations run as background tasks on the FastAPI crawler service. The system provides real-time status tracking, task cancellation, and comprehensive progress monitoring.
+The AxonDoc knowledge base system implements a **client-side task queue with server-side background job execution**. Tasks are managed in the frontend React context, while actual crawl operations run as background tasks on the FastAPI crawler service. The system provides real-time status tracking, task cancellation, and comprehensive progress monitoring.
 
 ---
 

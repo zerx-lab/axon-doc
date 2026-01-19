@@ -6,6 +6,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ChatConfig, HybridSearchChunk } from "@/lib/supabase/types";
 import { generateSingleEmbedding, hybridSearchChunksMultiKb, getEmbeddingConfig } from "@/lib/embeddings";
+import { isSuperAdmin } from "@/lib/supabase/access";
 
 export const maxDuration = 60;
 
@@ -49,10 +50,12 @@ export async function POST(request: NextRequest) {
       messages,
       system: clientSystem,
       kbIds,
+      operatorId,
     }: {
       messages: UIMessage[];
       system?: string;
       kbIds?: string[];
+      operatorId?: string;
     } = body;
 
     if (!messages || messages.length === 0) {
@@ -60,6 +63,41 @@ export async function POST(request: NextRequest) {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // Validate KB access if kbIds are provided
+    let validatedKbIds: string[] = [];
+    if (kbIds && kbIds.length > 0) {
+      if (!operatorId) {
+        return new Response(
+          JSON.stringify({ error: "operatorId required when using knowledge bases" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Check if user is super admin
+      const userIsSuperAdmin = await isSuperAdmin(supabase, operatorId);
+
+      if (userIsSuperAdmin) {
+        // Super admin can access all KBs
+        validatedKbIds = kbIds;
+      } else {
+        // Verify user owns the requested KBs
+        const { data: userKbs } = await supabase
+          .from("knowledge_bases")
+          .select("id")
+          .eq("user_id", operatorId)
+          .in("id", kbIds);
+
+        validatedKbIds = userKbs?.map(kb => kb.id) || [];
+
+        // Log if some KBs were filtered out (for debugging, not exposed to user)
+        if (validatedKbIds.length !== kbIds.length) {
+          console.debug(
+            `User ${operatorId} requested ${kbIds.length} KBs but only has access to ${validatedKbIds.length}`
+          );
+        }
+      }
     }
 
     const { data: chatConfigData } = await supabase
@@ -92,7 +130,7 @@ export async function POST(request: NextRequest) {
     let contextChunks: HybridSearchChunk[] = [];
     let systemPrompt = clientSystem || "You are a helpful AI assistant. Answer questions accurately and concisely.";
 
-    if (kbIds && kbIds.length > 0 && userQuery) {
+    if (validatedKbIds.length > 0 && userQuery) {
       try {
         const embeddingConfig = await getEmbeddingConfig(supabase);
         const queryEmbedding = await generateSingleEmbedding(userQuery, embeddingConfig);
@@ -101,7 +139,7 @@ export async function POST(request: NextRequest) {
           supabase,
           userQuery,
           queryEmbedding,
-          kbIds,
+          validatedKbIds,
           {
             matchCount: 5,
             matchThreshold: 0.3,
