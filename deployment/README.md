@@ -1,268 +1,239 @@
-# 📦 部署目录
+# AxonDoc Deployment
 
-本目录包含所有与生产部署相关的配置和脚本。
+One-command deployment with Docker Compose. Includes Supabase + Application stack.
 
-## 📋 目录结构
+## Quick Start
+
+```bash
+# 1. Clone repository
+git clone https://github.com/zerx-lab/axon-doc.git
+cd axon-doc/deployment
+
+# 2. Run setup (auto-generates secrets and starts services)
+chmod +x setup.sh
+./setup.sh
+
+# 3. Access
+# App:       http://localhost:3001  (admin / admin123)
+# API:       http://localhost:8000
+# Dashboard: http://localhost:8000  (supabase / <see .env>)
+```
+
+## Manual Setup
+
+```bash
+# 1. Copy environment file
+cp .env.example .env
+
+# 2. Generate secrets (or edit manually)
+./setup.sh --generate-keys
+
+# 3. Start services
+docker compose up -d
+
+# 4. Check status
+docker compose ps
+```
+
+## Directory Structure
 
 ```
 deployment/
-├── README.md                          # 本文件 - 部署说明
-├── docker-compose.prod.yml            # 生产环境 Docker Compose 配置
-├── kong-config.yml                    # Kong API 网关配置
-├── .env.production.example            # 环境变量配置示例
-├── .env.production                    # 实际环境变量（不提交到 Git）
-│
-├── scripts/                           # 部署和管理脚本
-│   ├── deploy.sh                      # 主部署脚本（自动拉取、备份、重启）
-│   ├── docker-entrypoint.sh           # Docker 启动入口脚本（本地开发用）
-│   ├── docker-healthcheck.sh          # 服务健康检查脚本
-│   └── docker-troubleshoot.sh         # 故障诊断脚本
-│
-├── docs/                              # 部署文档
-│   ├── DEPLOYMENT.md                  # 完整部署指南
-│   ├── CI_CD_SETUP.md                 # GitHub Actions CI/CD 配置指南
-│   ├── QUICK_START.md                 # 快速开始指南
-│   ├── DEPLOY_QUICK_REFERENCE.md      # 快速参考
-│   └── GHCR_SETUP.md                  # GitHub Container Registry 配置
-│
-└── examples/                          # 示例文件
-    └── systemd-service.example        # systemd 服务文件示例（可选）
+├── docker-compose.yml      # Complete stack (Supabase + App)
+├── .env.example            # Environment template
+├── setup.sh                # Quick setup script
+├── volumes/                # Service configurations
+│   ├── api/kong.yml        # API Gateway config
+│   ├── db/*.sql            # Database init scripts
+│   ├── logs/vector.yml     # Log collection config
+│   └── pooler/pooler.exs   # Connection pooler config
+└── docs/                   # Additional documentation
 ```
 
-## 🚀 快速开始
+## Architecture
 
-### 1️⃣ 初始化服务器（首次部署）
+```
+┌─────────────────────────────────────────────────────────┐
+│                        Browser                          │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+          ┌───────────────┴───────────────┐
+          │                               │
+    ┌─────▼─────┐                 ┌───────▼───────┐
+    │  Next.js  │                 │     Kong      │
+    │   :3001   │                 │    :8000      │
+    └─────┬─────┘                 └───────┬───────┘
+          │                               │
+   ┌──────┴──────┐          ┌─────────────┼─────────────┐
+   │             │          │             │             │
+┌──▼───┐   ┌─────▼─────┐  ┌─▼──┐    ┌─────▼─────┐ ┌─────▼─────┐
+│Crawl │   │ PostgreSQL│  │Auth│    │  Storage  │ │ Realtime  │
+│:8001 │   │   :5432   │  │    │    │           │ │           │
+└──┬───┘   └───────────┘  └────┘    └───────────┘ └───────────┘
+   │
+┌──▼───┐
+│Redis │
+│:6379 │
+└──────┘
+```
+
+## Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| nextjs | 3001 | Next.js application |
+| kong | 8000 | API Gateway |
+| crawler | 8001 | Web crawler |
+| db | 5432 | PostgreSQL |
+| redis | 6379 | Cache |
+| auth | - | Supabase Auth |
+| storage | - | File storage |
+| realtime | - | Realtime subscriptions |
+
+## Commands
 
 ```bash
-# 克隆项目
-git clone https://github.com/your-repo/axon-doc.git
-cd axon-doc/deployment
+# Start
+docker compose up -d
 
-# 复制和编辑环境配置
-cp .env.production.example .env.production
-nano .env.production
+# Stop
+docker compose down
 
-# 查看前置要求
-source scripts/deploy.sh check
+# Logs
+docker compose logs -f [service]
 
-# 执行首次部署
-./scripts/deploy.sh deploy
+# Reset (deletes all data!)
+docker compose down -v
+docker compose up -d
+
+# Update
+docker compose pull
+docker compose up -d
+
+# Status
+docker compose ps
 ```
 
-### 2️⃣ 日常更新（推送代码后）
+## Configuration
+
+### Required Settings
+
+Edit `.env` before deployment:
 
 ```bash
-cd /path/to/axon-doc/deployment
+# Database
+POSTGRES_PASSWORD=<strong-password>
 
-# 拉取最新镜像并重启
-./scripts/deploy.sh update-images
+# JWT (generate: openssl rand -hex 32)
+JWT_SECRET=<32-char-secret>
+
+# Supabase Keys (auto-generated by setup.sh)
+ANON_KEY=<jwt-token>
+SERVICE_ROLE_KEY=<jwt-token>
+
+# URLs (update for production)
+SITE_URL=https://your-domain.com
+API_EXTERNAL_URL=https://api.your-domain.com
+PUBLIC_SUPABASE_URL=https://api.your-domain.com
 ```
 
-### 3️⃣ 查看日志和状态
+### Optional Settings
 
 ```bash
-# 查看部署状态
-./scripts/deploy.sh status
+# Email (for auth emails)
+SMTP_HOST=smtp.example.com
+SMTP_USER=user
+SMTP_PASS=pass
 
-# 查看实时日志
-./scripts/deploy.sh logs
-
-# 健康检查
-./scripts/docker-healthcheck.sh
+# Dashboard auth
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=<password>
 ```
 
-## 📝 环境变量配置
+## Production Checklist
 
-### 必须配置的项目
+- [ ] Generate strong secrets with `./setup.sh --generate-keys`
+- [ ] Update URLs for your domain
+- [ ] Configure SMTP for email auth
+- [ ] Set up reverse proxy (nginx/traefik) with SSL
+- [ ] Configure backups for `postgres-data` volume
+- [ ] Change default admin password after first login
 
-编辑 `.env.production` 文件：
+## Database Migrations
 
+Migrations are loaded from `../supabase/migrations/` on first startup:
+
+```
+001_initial_schema.sql    # Core tables and functions
+002_add_chat_messages_status.sql
+003_add_chat_permissions_to_roles.sql
+seed.sql                  # Default admin user
+```
+
+To add new migrations:
+1. Create file in `supabase/migrations/` with incremental number
+2. Reset database: `docker compose down -v && docker compose up -d`
+
+## Troubleshooting
+
+### Services not starting
 ```bash
-# 1. 数据库密码（生产环境请修改）
-POSTGRES_PASSWORD=your-strong-password
-
-# 2. JWT 密钥（至少 32 字符）
-JWT_SECRET=$(openssl rand -base64 32)
-
-# 3. GitHub 信息（用于拉取 GHCR 镜像）
-GITHUB_USER=your-github-username
-GITHUB_REPO=your-repo-name
-
-# 4. OpenAI API 密钥（如需 AI 功能）
-OPENAI_API_KEY=sk-xxx...
-
-# 5. 公开访问地址（生产环境使用域名）
-SUPABASE_PUBLIC_URL=https://your-domain.com
+docker compose logs db      # Database issues
+docker compose logs kong    # API gateway issues
+docker compose logs nextjs  # App issues
 ```
 
-## 🔐 GitHub Container Registry (GHCR) 认证
-
-使用 GHCR 存储镜像需要认证：
-
+### Database connection
 ```bash
-# 方式一：使用 GitHub Personal Access Token
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-echo $GITHUB_TOKEN | docker login ghcr.io -u your-github-username --password-stdin
-
-# 方式二：设置到环境变量（deploy.sh 会自动使用）
-echo "export GITHUB_TOKEN=ghp_xxxxxxxxxxxx" >> ~/.bashrc
+docker compose exec db pg_isready -U postgres
+docker compose exec db psql -U postgres -c '\l'
 ```
 
-## 📚 文档索引
-
-| 文档 | 适合场景 | 阅读时间 |
-|------|--------|---------|
-| **QUICK_START.md** | 60秒快速上手 | 5 分钟 |
-| **DEPLOYMENT.md** | 完整部署指南 | 30 分钟 |
-| **CI_CD_SETUP.md** | 配置 GitHub Actions | 20 分钟 |
-| **GHCR_SETUP.md** | 配置 GHCR 认证 | 10 分钟 |
-| **DEPLOY_QUICK_REFERENCE.md** | 常用命令速查 | 3 分钟 |
-
-## 🛠️ 脚本说明
-
-### deploy.sh - 主部署脚本
-
+### Reset everything
 ```bash
-./scripts/deploy.sh deploy              # 完整部署（拉取+备份+重启+检查）
-./scripts/deploy.sh pull-only           # 仅拉取镜像
-./scripts/deploy.sh update-images       # 更新镜像并重启
-./scripts/deploy.sh rollback            # 回滚到上一个版本
-./scripts/deploy.sh status              # 查看状态
-./scripts/deploy.sh logs                # 查看日志
-./scripts/deploy.sh clean               # 清理所有容器和数据
+docker compose down -v
+docker compose up -d
 ```
 
-### docker-healthcheck.sh - 健康检查
-
-验证所有服务是否正常运行：
-
+### View app logs
 ```bash
-./scripts/docker-healthcheck.sh
+docker compose logs -f nextjs
+docker compose logs -f crawler
 ```
 
-### docker-troubleshoot.sh - 故障诊断
+## Updating
 
-自动诊断常见问题：
-
+### Update application images
 ```bash
-./scripts/docker-troubleshoot.sh
+docker compose pull nextjs crawler
+docker compose up -d nextjs crawler
 ```
 
-## 📊 部署流程
-
-```
-1. git push origin main
-   ↓
-2. GitHub Actions 自动构建镜像（7-12 分钟）
-   ├─ 构建 Next.js 镜像
-   └─ 构建 Crawler 镜像
-   ↓
-3. 推送到 GitHub Container Registry (GHCR)
-   ↓
-4. 服务器拉取新镜像
-   ./scripts/deploy.sh update-images
-   ↓
-5. 容器自动重启并进行健康检查
-   ↓
-6. 新版本上线 ✅
-```
-
-## ✅ 部署检查清单
-
-### 首次部署前
-
-- [ ] Docker 已安装 (20.10+)
-- [ ] Docker Compose 已安装 (2.0+)
-- [ ] `.env.production` 已配置
-- [ ] GITHUB_TOKEN 已设置
-- [ ] 磁盘空间 >= 20GB
-- [ ] 内存 >= 8GB
-
-### 首次部署后
-
-- [ ] `./scripts/deploy.sh status` 显示所有服务运行
-- [ ] `./scripts/docker-healthcheck.sh` 显示所有检查通过
-- [ ] 应用可访问: http://your-server:4321
-- [ ] 查看日志无错误: `./scripts/deploy.sh logs`
-
-### 每次代码推送后
-
-- [ ] GitHub Actions 构建成功
-- [ ] 镜像已推送到 GHCR
-- [ ] 运行: `./scripts/deploy.sh update-images`
-- [ ] 验证应用正常: http://your-server:4321
-
-## 🔄 定时更新设置（可选）
-
-使用 crontab 定期更新镜像：
-
+### Update all services
 ```bash
-# 编辑 crontab
-crontab -e
-
-# 每 6 小时检查一次更新
-0 */6 * * * cd /path/to/axon-doc/deployment && ./scripts/deploy.sh update-images
-
-# 每天凌晨 2 点更新
-0 2 * * * cd /path/to/axon-doc/deployment && ./scripts/deploy.sh update-images
+docker compose pull
+docker compose up -d
 ```
 
-## 📞 常见问题
+## Backup & Restore
 
-### Q: 如何查看部署日志？
+### Backup database
 ```bash
-./scripts/deploy.sh logs
+docker compose exec db pg_dump -U postgres > backup.sql
 ```
 
-### Q: 如何回滚到上一个版本？
+### Restore database
 ```bash
-./scripts/deploy.sh rollback
+docker compose exec -T db psql -U postgres < backup.sql
 ```
 
-### Q: 如何重启所有服务？
+### Backup volumes
 ```bash
-docker-compose -f docker-compose.prod.yml restart
-```
-
-### Q: 如何备份数据库？
-```bash
-docker-compose -f docker-compose.prod.yml exec db pg_dump -U postgres > backup.sql
-```
-
-### Q: 如何进入容器调试？
-```bash
-docker-compose -f docker-compose.prod.yml exec nextjs bash
-```
-
-## 📖 更多信息
-
-- 完整部署指南: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)
-- GitHub Actions 配置: [docs/CI_CD_SETUP.md](./docs/CI_CD_SETUP.md)
-- 快速参考: [docs/DEPLOY_QUICK_REFERENCE.md](./docs/DEPLOY_QUICK_REFERENCE.md)
-- 根项目目录: [../README.md](../README.md)
-
-## 🎯 项目结构概览
-
-```
-axon-doc/
-├── deployment/               # 👈 你在这里 - 部署相关
-│   ├── scripts/             # 部署脚本
-│   ├── docs/                # 部署文档
-│   └── ...
-├── docker/                  # Docker 镜像定义
-│   ├── Dockerfile.prod      # Next.js 生产镜像
-│   └── ...
-├── app/                     # Next.js 应用代码
-├── lib/                     # 工具库
-├── components/              # React 组件
-├── crawler-service/         # Crawler Python 服务
-├── .github/                 # GitHub 配置
-│   └── workflows/           # GitHub Actions 工作流
-└── ...
+docker run --rm -v axon-doc_postgres-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/postgres-backup.tar.gz /data
 ```
 
 ---
 
-**版本**: 1.0.0  
-**最后更新**: 2026-01-20  
-**维护者**: AxonDoc Team
+**Version**: 2.0.0  
+**Last Updated**: 2026-01-20
