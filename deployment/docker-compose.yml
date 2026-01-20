@@ -387,6 +387,9 @@ services:
       - ${NEXTJS_PORT:-3001}:3000
     environment:
       NODE_ENV: production
+      # Server-side Supabase URL (Docker internal network)
+      SUPABASE_URL: http://kong:8000
+      # Client-side Supabase URL (external access)
       NEXT_PUBLIC_SUPABASE_URL: ${PUBLIC_SUPABASE_URL:-http://localhost:8000}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}

@@ -37,8 +37,10 @@ export function createAdminClient() {
   const { createClient } = require("@supabase/supabase-js") as {
     createClient: typeof import("@supabase/supabase-js").createClient;
   };
+  // Use SUPABASE_URL for server-side (Docker internal), fallback to public URL
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
   return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseUrl,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       auth: {
