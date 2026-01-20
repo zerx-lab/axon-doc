@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { Button, Dialog } from "@/components/ui";
 import { Thread } from "@/components/assistant-ui/thread";
+import { ErrorAlert } from "@/components/chat/ErrorAlert";
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -38,25 +39,26 @@ export default function ChatPage() {
   const currentUserId = authUser?.id;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const [retrievalDebug, setRetrievalDebug] = useState<{
-    enabled: boolean;
-    kbIds: string[];
-    kbCount: number;
-    searchExecuted: boolean;
-    chunksFound: number;
-    error: string | null;
-    embeddingModel: string | null;
-    searchParams: { matchCount: number; matchThreshold: number; vectorWeight: number } | null;
-    references?: Array<{ documentId: string; documentTitle: string; sourceUrl?: string | null; contextSummary?: string | null; content: string; similarity?: number; chunkIndex?: number }>;
-    contextEnabled: boolean;
-    hybridSearchUsed: boolean;
-    rerankEnabled: boolean;
-    candidatesBeforeRerank: number;
-    rerankerProvider: string | null;
-    resultTypes: { vector: number; bm25: number; hybrid: number } | null;
-  } | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+   const [isRunning, setIsRunning] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const [retrievalDebug, setRetrievalDebug] = useState<{
+     enabled: boolean;
+     kbIds: string[];
+     kbCount: number;
+     searchExecuted: boolean;
+     chunksFound: number;
+     error: string | null;
+     embeddingModel: string | null;
+     searchParams: { matchCount: number; matchThreshold: number; vectorWeight: number } | null;
+     references?: Array<{ documentId: string; documentTitle: string; sourceUrl?: string | null; contextSummary?: string | null; content: string; similarity?: number; chunkIndex?: number }>;
+     contextEnabled: boolean;
+     hybridSearchUsed: boolean;
+     rerankEnabled: boolean;
+     candidatesBeforeRerank: number;
+     rerankerProvider: string | null;
+     resultTypes: { vector: number; bm25: number; hybrid: number } | null;
+   } | null>(null);
+   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchSessions = useCallback(async () => {
     if (!currentUserId || !canAccess) return;
@@ -169,9 +171,10 @@ export default function ChatPage() {
         signal: abortControllerRef.current.signal,
       });
       
-      if (!response.ok) {
-        throw new Error("Failed to send message");
-      }
+       if (!response.ok) {
+         const errorData = await response.json().catch(() => ({ error: "Failed to send message" }));
+         throw new Error(errorData.error || "Failed to send message");
+       }
       
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
@@ -237,26 +240,36 @@ export default function ChatPage() {
                   }
                   break;
                   
-                case "done":
-                  if (assistantMessageId) {
-                    const metadata = {
-                      ...data.usage,
-                      references: currentReferences,
-                    };
-                    setMessages(prev =>
-                      prev.map(m =>
-                        m.id === assistantMessageId
-                          ? { ...m, status: "completed" as const, metadata: metadata as unknown as ChatMessage["metadata"] }
-                          : m
-                      )
-                    );
-                  }
-                  fetchSessions();
-                  break;
-                  
-                case "error":
-                  console.error("Stream error:", data.error);
-                  break;
+                 case "done":
+                   if (assistantMessageId) {
+                     const metadata = {
+                       ...data.usage,
+                       references: currentReferences,
+                     };
+                     setMessages(prev =>
+                       prev.map(m =>
+                         m.id === assistantMessageId
+                           ? { ...m, status: "completed" as const, metadata: metadata as unknown as ChatMessage["metadata"] }
+                           : m
+                       )
+                     );
+                   }
+                   fetchSessions();
+                   break;
+                   
+                 case "error":
+                   console.error("Stream error:", data.error);
+                   setError(data.error);
+                   if (assistantMessageId) {
+                     setMessages(prev =>
+                       prev.map(m =>
+                         m.id === assistantMessageId
+                           ? { ...m, status: "failed" as const }
+                           : m
+                       )
+                     );
+                   }
+                   break;
               }
             } catch {
               // JSON parse error for incomplete chunks
@@ -264,14 +277,16 @@ export default function ChatPage() {
           }
         }
       }
-    } catch (error) {
-      if ((error as Error).name === "AbortError") {
-        console.log("Request cancelled");
-      } else {
-        console.error("Failed to send message:", error);
-        setMessages(prev => prev.filter(m => m.id !== userMessageId));
-      }
-    } finally {
+     } catch (error) {
+       if ((error as Error).name === "AbortError") {
+         console.log("Request cancelled");
+       } else {
+         const errorMessage = error instanceof Error ? error.message : String(error);
+         console.error("Failed to send message:", error);
+         setError(errorMessage);
+         setMessages(prev => prev.filter(m => m.id !== userMessageId));
+       }
+     } finally {
       setIsRunning(false);
       abortControllerRef.current = null;
     }
@@ -308,9 +323,10 @@ export default function ChatPage() {
         signal: abortControllerRef.current.signal,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to regenerate message");
-      }
+       if (!response.ok) {
+         const errorData = await response.json().catch(() => ({ error: "Failed to regenerate message" }));
+         throw new Error(errorData.error || "Failed to regenerate message");
+       }
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
@@ -366,25 +382,35 @@ export default function ChatPage() {
                   }
                   break;
 
-                case "done":
-                  if (assistantMessageId) {
-                    const metadata = {
-                      ...data.usage,
-                      references: currentReferences,
-                    };
-                    setMessages(prev =>
-                      prev.map(m =>
-                        m.id === assistantMessageId
-                          ? { ...m, status: "completed" as const, metadata: metadata as unknown as ChatMessage["metadata"] }
-                          : m
-                      )
-                    );
-                  }
-                  break;
+                 case "done":
+                   if (assistantMessageId) {
+                     const metadata = {
+                       ...data.usage,
+                       references: currentReferences,
+                     };
+                     setMessages(prev =>
+                       prev.map(m =>
+                         m.id === assistantMessageId
+                           ? { ...m, status: "completed" as const, metadata: metadata as unknown as ChatMessage["metadata"] }
+                           : m
+                       )
+                     );
+                   }
+                   break;
 
-                case "error":
-                  console.error("Stream error:", data.error);
-                  break;
+                 case "error":
+                   console.error("Stream error:", data.error);
+                   setError(data.error);
+                   if (assistantMessageId) {
+                     setMessages(prev =>
+                       prev.map(m =>
+                         m.id === assistantMessageId
+                           ? { ...m, status: "failed" as const }
+                           : m
+                       )
+                     );
+                   }
+                   break;
               }
             } catch {
               // JSON parse error for incomplete chunks
@@ -392,15 +418,17 @@ export default function ChatPage() {
           }
         }
       }
-    } catch (error) {
-      if ((error as Error).name !== "AbortError") {
-        console.error("Failed to regenerate message:", error);
-      }
-    } finally {
-      setIsRunning(false);
-      abortControllerRef.current = null;
-    }
-  }, [currentSession, currentUserId, selectedKbIds, messages]);
+     } catch (error) {
+       if ((error as Error).name !== "AbortError") {
+         const errorMessage = error instanceof Error ? error.message : String(error);
+         console.error("Failed to regenerate message:", error);
+         setError(errorMessage);
+       }
+     } finally {
+       setIsRunning(false);
+       abortControllerRef.current = null;
+     }
+   }, [currentSession, currentUserId, selectedKbIds, messages]);
 
   const runtime = useExternalStoreRuntime({
     messages,
@@ -523,73 +551,75 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)]">
-      <div className="w-64 flex-shrink-0 border-r border-border bg-card">
-        <div className="flex h-14 items-center justify-between border-b border-border px-4">
-          <span className="font-mono text-sm font-medium">{t("chat.sessions")}</span>
-          {canCreate && (
-            <button
-              onClick={createNewSession}
-              className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.08]"
-              title={t("chat.newChat")}
-            >
-              <PlusIcon className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+    <>
+      <ErrorAlert error={error} onDismiss={() => setError(null)} />
+      <div className="flex h-[calc(100vh-64px)]">
+        <div className="w-64 flex-shrink-0 border-r border-border bg-card">
+          <div className="flex h-14 items-center justify-between border-b border-border px-4">
+            <span className="font-mono text-sm font-medium">{t("chat.sessions")}</span>
+            {canCreate && (
+              <button
+                onClick={createNewSession}
+                className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.08]"
+                title={t("chat.newChat")}
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
 
-        <div className="h-[calc(100%-56px)] overflow-y-auto p-2">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <span className="font-mono text-xs text-muted-foreground">{t("common.loading")}...</span>
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <span className="font-mono text-xs text-muted-foreground">{t("chat.noSessions")}</span>
-              {canCreate && (
-                <Button size="sm" className="mt-4" onClick={createNewSession}>
-                  <PlusIcon className="mr-2 h-3 w-3" />
-                  {t("chat.newChat")}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 transition-colors ${
-                    currentSession?.id === session.id 
-                      ? "bg-foreground/[0.08]" 
-                      : "hover:bg-foreground/[0.04]"
-                  }`}
-                  onClick={() => selectSession(session)}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm">
-                      {session.title || t("chat.untitled")}
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-foreground">
-                      {session.message_count} {t("chat.messageCount")}
-                    </p>
+          <div className="h-[calc(100%-56px)] overflow-y-auto p-2">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <span className="font-mono text-xs text-muted-foreground">{t("common.loading")}...</span>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <span className="font-mono text-xs text-muted-foreground">{t("chat.noSessions")}</span>
+                {canCreate && (
+                  <Button size="sm" className="mt-4" onClick={createNewSession}>
+                    <PlusIcon className="mr-2 h-3 w-3" />
+                    {t("chat.newChat")}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 transition-colors ${
+                      currentSession?.id === session.id 
+                        ? "bg-foreground/[0.08]" 
+                        : "hover:bg-foreground/[0.04]"
+                    }`}
+                    onClick={() => selectSession(session)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-sm">
+                        {session.title || t("chat.untitled")}
+                      </p>
+                      <p className="font-mono text-[10px] text-muted-foreground">
+                        {session.message_count} {t("chat.messageCount")}
+                      </p>
+                    </div>
+                    {canDelete && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDeleteSession(session);
+                        }}
+                        className="ml-2 hidden h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500 group-hover:flex"
+                      >
+                        <TrashIcon className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
-                  {canDelete && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        confirmDeleteSession(session);
-                      }}
-                      className="ml-2 hidden h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500 group-hover:flex"
-                    >
-                      <TrashIcon className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-4">
@@ -875,7 +905,8 @@ export default function ChatPage() {
           )}
         </div>
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }
 

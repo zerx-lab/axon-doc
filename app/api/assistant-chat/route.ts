@@ -6,6 +6,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ChatConfig, HybridSearchChunk } from "@/lib/supabase/types";
 import { generateSingleEmbedding, hybridSearchChunksMultiKb, getEmbeddingConfig } from "@/lib/embeddings";
+import { extractErrorMessage } from "@/lib/error-extractor";
 
 export const maxDuration = 60;
 
@@ -121,22 +122,80 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const model = createProvider(chatConfig);
-    const modelMessages = await convertToModelMessages(messages);
+     const model = createProvider(chatConfig);
+     const modelMessages = await convertToModelMessages(messages);
+     let modelError: Error | null = null;
 
-    const result = streamText({
-      model,
-      system: systemPrompt,
-      messages: modelMessages,
-      maxOutputTokens: chatConfig.maxTokens || 2048,
-      temperature: chatConfig.temperature ?? 0.7,
-    });
+     const result = streamText({
+       model,
+       system: systemPrompt,
+       messages: modelMessages,
+       maxOutputTokens: chatConfig.maxTokens || 2048,
+       temperature: chatConfig.temperature ?? 0.7,
+        onError: async (error) => {
+          let errorMessage = "Unknown error";
+          
+          if (error instanceof Error) {
+            errorMessage = error.message;
+          } else if (typeof error === "object" && error !== null) {
+            const err = error as Record<string, unknown>;
+            if (err.error && typeof err.error === "object") {
+              const innerErr = err.error as Record<string, unknown>;
+              if (typeof innerErr.message === "string") {
+                errorMessage = innerErr.message;
+              } else {
+                errorMessage = JSON.stringify(err.error);
+              }
+            } else if (typeof err.message === "string") {
+              errorMessage = err.message;
+            } else {
+              errorMessage = JSON.stringify(error);
+            }
+          } else {
+            errorMessage = String(error);
+          }
+          
+          modelError = new Error(errorMessage);
+        },
+     });
 
-    return result.toUIMessageStreamResponse();
+     const encoder = new TextEncoder();
+     const customStream = new ReadableStream({
+       async start(controller) {
+         try {
+           for await (const chunk of result.textStream) {
+             if (modelError) {
+               throw modelError;
+             }
+             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", text: chunk })}\n\n`));
+           }
+           
+           if (modelError) {
+             throw modelError;
+           }
+           
+           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "finish", reason: "done" })}\n\n`));
+         } catch (error) {
+           const finalError = modelError || error;
+           const errorMessage = extractErrorMessage(finalError);
+           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: errorMessage })}\n\n`));
+         }
+         controller.close();
+       },
+     });
+
+     return new Response(customStream, {
+       headers: {
+         "Content-Type": "text/event-stream",
+         "Cache-Control": "no-cache",
+         "Connection": "keep-alive",
+       },
+     });
   } catch (error) {
     console.error("Assistant chat error:", error);
+    const errorMessage = extractErrorMessage(error);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
