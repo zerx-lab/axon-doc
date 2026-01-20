@@ -1,0 +1,217 @@
+# ==========================================
+# Kong API Gateway 配置
+# ==========================================
+# 声明式配置 - Kong 将根据此配置进行路由转发
+# 
+# 路由规则:
+# - /api/* -> Supabase REST API
+# - /auth/* -> Supabase Auth
+# - /realtime/* -> Supabase Realtime
+# - /storage/* -> Supabase Storage
+# - /api/crawler/* -> Crawler 服务
+# - /* -> Next.js 应用
+
+_format_version: "3.0"
+
+services:
+  # ==========================================
+  # Supabase REST API 服务
+  # ==========================================
+  - name: supabase-rest
+    url: http://rest:3000
+    routes:
+      - name: rest-api
+        paths:
+          - /rest/v1
+        path_handling: v0
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "apikey:${SUPABASE_ANON_KEY}"
+                  - "Authorization:Bearer ${SUPABASE_ANON_KEY}"
+
+  # ==========================================
+  # Supabase Auth 服务
+  # ==========================================
+  - name: supabase-auth
+    url: http://auth:9999
+    routes:
+      - name: auth-api
+        paths:
+          - /auth/v1
+        path_handling: v0
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+
+  # ==========================================
+  # Supabase Realtime 服务
+  # ==========================================
+  - name: supabase-realtime
+    url: http://realtime:4000
+    routes:
+      - name: realtime-api
+        paths:
+          - /realtime/v1
+        path_handling: v0
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+
+  # ==========================================
+  # Supabase Storage 服务
+  # ==========================================
+  - name: supabase-storage
+    url: http://rest:3000/storage/v1
+    routes:
+      - name: storage-api
+        paths:
+          - /storage/v1
+        path_handling: v0
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+
+  # ==========================================
+  # Crawler 服务
+  # ==========================================
+  - name: crawler-service
+    url: http://crawler:8001
+    routes:
+      - name: crawler-api
+        paths:
+          - /api/crawler
+        path_handling: v0
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+          - name: rate-limiting
+            config:
+              minute: 100
+              hour: 1000
+
+  # ==========================================
+  # Next.js 应用 (默认)
+  # ==========================================
+  - name: nextjs-app
+    url: http://nextjs:3001
+    routes:
+      - name: nextjs-default
+        paths:
+          - /
+        path_handling: v1
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Content-Type
+                - Authorization
+              credentials: true
+              max_age: 3600
+
+# ==========================================
+# 全局插件配置
+# ==========================================
+plugins:
+  # 请求大小限制
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 128
+      require_content_length: true
+
+  # 响应转换
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Powered-By:AxonDoc"
+          - "Strict-Transport-Security:max-age=31536000; includeSubDomains"

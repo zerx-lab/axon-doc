@@ -1,0 +1,332 @@
+# ==========================================
+# AxonDoc 生产部署配置（使用预构建镜像）
+# ==========================================
+# 使用方式: docker-compose -f docker-compose.prod.yml up -d
+# 
+# 特点:
+# - 使用 Docker Hub / GHCR 中的预构建镜像
+# - 无需本地源代码
+# - 直接拉取最新镜像部署
+# - 快速部署和更新
+
+name: axon-doc
+
+services:
+  # ==========================================
+  # PostgreSQL 数据库 (Supabase 后端)
+  # ==========================================
+  db:
+    container_name: axon-doc-db
+    image: supabase/postgres:15.1.1.78
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - axon-network
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+
+  # ==========================================
+  # Redis 缓存
+  # ==========================================
+  redis:
+    container_name: axon-doc-redis
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - axon-network
+    command: redis-server --appendonly yes
+
+  # ==========================================
+  # Supabase Auth 服务
+  # ==========================================
+  auth:
+    container_name: axon-doc-auth
+    image: supabase/gotrue:v2.184.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_DB_DRIVER: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_GROUP_NAME: admin
+      GOTRUE_SITE_URL: ${SUPABASE_PUBLIC_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SUPABASE_PUBLIC_URL}
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_EMAIL_AUTOCONFIRM: "true"
+      MFA_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Supabase REST API 服务
+  # ==========================================
+  rest:
+    container_name: axon-doc-rest
+    image: postgrest/postgrest:v12.0.1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_JWT_AUD: authenticated
+      PGRST_MAX_ROWS: 1000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Supabase Realtime 服务
+  # ==========================================
+  realtime:
+    container_name: axon-doc-realtime
+    image: supabase/realtime:v2.27.6
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SSLMODE: disable
+      ENABLE_TAILSCALE_FUNCS: "false"
+      JWT_PRIVATE_KEY: ${JWT_SECRET}
+      JWT_PUBLIC_KEY: ${JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Supabase Analytics
+  # ==========================================
+  analytics:
+    container_name: axon-doc-analytics
+    image: supabase/logflare:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - axon-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ==========================================
+  # Kong API 网关
+  # ==========================================
+  kong:
+    container_name: axon-doc-kong
+    image: kong:3.3.1-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+    ports:
+      - "${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTPS_PORT}:8443"
+      - "8001:8001"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,rate-limiting,request-size-limiting,response-transformer
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      KONG_NGINX_WORKER_PROCESSES: auto
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    volumes:
+      - ./kong-config.yml:/home/kong/kong.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Supabase Studio
+  # ==========================================
+  studio:
+    container_name: axon-doc-studio
+    image: supabase/studio:latest
+    restart: unless-stopped
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      HOSTNAME: "::"
+      STUDIO_PG_META_URL: http://rest:3000
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
+      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
+      LOGFLARE_URL: http://analytics:4000
+      NEXT_PUBLIC_ENABLE_LOGS: "true"
+      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/profile"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Crawler 服务 (使用 GHCR 预构建镜像)
+  # ==========================================
+  crawler:
+    container_name: axon-doc-crawler
+    image: ghcr.io/${GITHUB_USER}/${GITHUB_REPO}-crawler:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      CRAWLER_TIMEOUT: ${CRAWLER_TIMEOUT}
+      CRAWLER_MAX_DEPTH: ${CRAWLER_MAX_DEPTH}
+      CRAWLER_MAX_PAGES: ${CRAWLER_MAX_PAGES}
+      CRAWLER_WAIT_UNTIL: ${CRAWLER_WAIT_UNTIL}
+      API_HOST: 0.0.0.0
+      API_PORT: 8001
+      NEXTJS_WEBHOOK_URL: http://nextjs:3001/api/webhook/crawl
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - axon-network
+
+  # ==========================================
+  # Next.js 应用 (使用 GHCR 预构建镜像)
+  # ==========================================
+  nextjs:
+    container_name: axon-doc-nextjs
+    image: ghcr.io/${GITHUB_USER}/${GITHUB_REPO}-nextjs:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_healthy
+      crawler:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: http://kong:8000
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      NODE_ENV: ${NODE_ENV}
+      CRAWLER_SERVICE_URL: http://crawler:8001
+      LOG_LEVEL: ${LOG_LEVEL}
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - axon-network
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  axon-network:
+    driver: bridge

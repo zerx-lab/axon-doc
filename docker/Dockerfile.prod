@@ -1,0 +1,64 @@
+# ==========================================
+# Next.js 应用生产构建 (多阶段构建)
+# ==========================================
+
+# 第一阶段: 依赖安装
+FROM oven/bun:latest AS dependencies
+WORKDIR /app
+
+# 复制 package.json 和 lock 文件
+COPY package.json bun.lock ./
+
+# 使用 bun 安装依赖 (只安装生产依赖)
+RUN bun install --production
+
+# 第二阶段: 构建应用
+FROM oven/bun:latest AS builder
+WORKDIR /app
+
+# 复制 package.json
+COPY package.json bun.lock ./
+
+# 安装所有依赖 (包括开发依赖)
+RUN bun install
+
+# 复制源代码
+COPY tsconfig.json postcss.config.mjs next.config.ts ./
+COPY app ./app
+COPY lib ./lib
+COPY components ./components
+COPY public ./public
+
+# 构建应用
+RUN bun run build
+
+# 第三阶段: 运行时
+FROM oven/bun:latest AS runtime
+WORKDIR /app
+
+# 安装 curl 用于健康检查
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# 复制第一阶段的依赖
+COPY --from=dependencies /app/node_modules ./node_modules
+
+# 复制必要的配置文件
+COPY package.json next.config.ts postcss.config.mjs ./
+
+# 复制构建输出
+COPY --from=builder /app/.next ./.next
+COPY public ./public
+
+# 创建非 root 用户
+RUN useradd -m -u 1001 nextjs
+USER nextjs
+
+# 暴露端口
+EXPOSE 3001
+
+# 健康检查
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:3001/ || exit 1
+
+# 启动应用
+CMD ["bun", "start"]

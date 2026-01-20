@@ -50,3 +50,8 @@ crawler-service/.env
 
 # Windows
 nul
+
+# Deployment (生产环境配置和日志)
+deployment/.env.production
+deployment/backups/
+deployment/logs/
