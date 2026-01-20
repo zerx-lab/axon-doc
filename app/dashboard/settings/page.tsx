@@ -1061,15 +1061,15 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="font-mono text-lg font-medium uppercase tracking-wider">
+    <div className="p-4 md:p-8">
+      <div className="mb-6 md:mb-8">
+        <h1 className="font-mono text-base md:text-lg font-medium uppercase tracking-wider">
           {t("settings.title")}
         </h1>
       </div>
 
-      <div className="max-w-2xl space-y-8">
-        <div className="border border-border p-6">
+      <div className="max-w-2xl space-y-6 md:space-y-8">
+        <div className="border border-border p-4 md:p-6">
           <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
             {t("settings.language")}
           </h2>
@@ -1087,7 +1087,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="border border-border p-6">
+        <div className="border border-border p-4 md:p-6">
           <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
             {t("settings.theme")}
           </h2>
@@ -1108,7 +1108,7 @@ export default function SettingsPage() {
         </div>
 
         {canEditSettings && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.embeddingModel")}
             </h2>
@@ -1431,7 +1431,7 @@ export default function SettingsPage() {
         )}
 
         {canEditSettings && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.chatModelConfig")}
             </h2>
@@ -1588,7 +1588,7 @@ export default function SettingsPage() {
         )}
 
         {canEditSettings && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-4 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.rerankerConfig")}
             </h2>
@@ -1868,7 +1868,7 @@ export default function SettingsPage() {
 
         {/* Reranker Quality Control Configuration */}
         {canEditSettings && rerankerConfig.enabled && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.qualityControl") || "Reranker Quality Control"}
             </h2>
@@ -2019,7 +2019,7 @@ export default function SettingsPage() {
 
         {/* Prompt Configuration Section */}
         {canEditSettings && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.promptConfig")}
             </h2>
@@ -2126,7 +2126,7 @@ export default function SettingsPage() {
 
         {/* Import/Export Configuration Section */}
         {canEditSettings && (
-          <div className="border border-border p-6">
+          <div className="border border-border p-4 md:p-6">
             <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {t("settings.importExport")}
             </h2>

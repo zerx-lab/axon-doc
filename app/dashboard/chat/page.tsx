@@ -36,6 +36,7 @@ export default function ChatPage() {
   const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null);
   const [kbDialogOpen, setKbDialogOpen] = useState(false);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const currentUserId = authUser?.id;
 
@@ -572,18 +573,37 @@ export default function ChatPage() {
     <>
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
       <div className="flex h-[calc(100vh-64px)]">
-        <div className="w-64 flex-shrink-0 border-r border-border bg-card">
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar */}
+        <div className={`fixed inset-y-0 left-0 z-50 w-64 flex-shrink-0 border-r border-border bg-card transition-transform duration-300 md:static md:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`} style={{ top: '56px' }}>
           <div className="flex h-14 items-center justify-between border-b border-border px-4">
             <span className="font-mono text-sm font-medium">{t("chat.sessions")}</span>
-            {canCreate && (
+            <div className="flex items-center gap-2">
+              {canCreate && (
+                <button
+                  onClick={createNewSession}
+                  className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.08]"
+                  title={t("chat.newChat")}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                </button>
+              )}
               <button
-                onClick={createNewSession}
-                className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.08]"
-                title={t("chat.newChat")}
+                onClick={() => setSidebarOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.08] md:hidden"
               >
-                <PlusIcon className="h-4 w-4" />
+                <CloseIcon className="h-4 w-4" />
               </button>
-            )}
+            </div>
           </div>
 
           <div className="h-[calc(100%-56px)] overflow-y-auto p-2">
@@ -611,7 +631,7 @@ export default function ChatPage() {
                         ? "bg-foreground/[0.08]" 
                         : "hover:bg-foreground/[0.04]"
                     }`}
-                    onClick={() => selectSession(session)}
+                    onClick={() => { selectSession(session); setSidebarOpen(false); }}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-mono text-sm">
@@ -640,10 +660,18 @@ export default function ChatPage() {
         </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-4">
-          <span className="font-mono text-sm font-medium">
-            {currentSession?.title || t("chat.newChat")}
-          </span>
+        <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border px-2 md:px-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="flex h-8 w-8 items-center justify-center border border-border text-muted-foreground transition-colors hover:border-foreground hover:text-foreground md:hidden"
+            >
+              <MenuIcon className="h-4 w-4" />
+            </button>
+            <span className="font-mono text-sm font-medium truncate">
+              {currentSession?.title || t("chat.newChat")}
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setDebugPanelOpen(!debugPanelOpen)}
@@ -969,6 +997,14 @@ function CloseIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function MenuIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 12h18M3 6h18M3 18h18" />
     </svg>
   );
 }

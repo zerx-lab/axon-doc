@@ -60,23 +60,23 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="p-4 md:p-8">
+      <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-mono text-xl font-medium">{t("task.title")}</h1>
+          <h1 className="font-mono text-lg md:text-xl font-medium">{t("task.title")}</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {pendingCount} {t("task.status.pending").toLowerCase()} · {runningCount} {t("task.status.running").toLowerCase()} · {completedCount} {t("task.status.completed").toLowerCase()}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           {completedCount > 0 && (
-            <Button variant="secondary" onClick={clearCompletedTasks}>
+            <Button variant="secondary" onClick={clearCompletedTasks} className="w-full sm:w-auto">
               <ClearIcon className="mr-2 h-3 w-3" />
               {t("task.clearCompleted")}
             </Button>
           )}
           {tasks.length > 0 && (
-            <Button variant="danger" onClick={clearAllTasks}>
+            <Button variant="danger" onClick={clearAllTasks} className="w-full sm:w-auto">
               <TrashIcon className="mr-2 h-3 w-3" />
               {t("task.clearAll")}
             </Button>
@@ -84,8 +84,8 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <div className="border border-border">
-        <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border bg-card px-4 py-3">
+      <div className="border border-border overflow-x-auto">
+        <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border bg-card px-4 py-3 min-w-[800px]">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {t("task.taskName")}
           </div>
@@ -145,7 +145,7 @@ function TaskRow({ task, getTaskTypeLabel, formatDuration, formatTime, onCancel,
   const canCancel = task.status === "pending" || task.status === "running";
 
   return (
-    <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50">
+    <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50 min-w-[800px]">
       <div className="min-w-0">
         <div className="truncate font-mono text-sm" title={task.title}>
           {task.title}

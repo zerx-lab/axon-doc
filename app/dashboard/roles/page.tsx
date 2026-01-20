@@ -248,17 +248,17 @@ export default function RolesPage() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-mono text-xl font-medium">{t("roles.title")}</h1>
+          <h1 className="font-mono text-lg md:text-xl font-medium">{t("roles.title")}</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {roles.length} {t("common.role").toLowerCase()}(s)
           </p>
         </div>
         {canCreateRole && (
-          <Button onClick={openCreateDialog}>
+          <Button onClick={openCreateDialog} className="w-full sm:w-auto">
             <PlusIcon className="mr-2 h-3 w-3" />
             {t("roles.createRole")}
           </Button>

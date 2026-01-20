@@ -333,17 +333,17 @@ export default function UsersPage() {
   const roleOptions = roles.map((role) => ({ value: role.id, label: role.name }));
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-mono text-xl font-medium">{t("users.title")}</h1>
+          <h1 className="font-mono text-lg md:text-xl font-medium">{t("users.title")}</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {users.length} {t("common.user").toLowerCase()}(s)
           </p>
         </div>
         {canCreateUser && (
-          <Button onClick={openCreateDialog}>
+          <Button onClick={openCreateDialog} className="w-full sm:w-auto">
             <PlusIcon className="mr-2 h-3 w-3" />
             {t("users.createUser")}
           </Button>
@@ -356,14 +356,14 @@ export default function UsersPage() {
           placeholder={t("users.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
+          className="w-full sm:max-w-sm"
         />
       </div>
 
       {/* Users Table */}
-      <div className="border border-border">
+      <div className="border border-border overflow-x-auto">
         {/* Table Header */}
-        <div className="grid grid-cols-[1fr_1fr_150px_100px_140px] gap-4 border-b border-border bg-card px-4 py-3">
+        <div className="grid grid-cols-[1fr_1fr_150px_100px_140px] gap-4 border-b border-border bg-card px-4 py-3 min-w-[700px]">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {t("users.username")}
           </div>
@@ -394,7 +394,7 @@ export default function UsersPage() {
           users.map((user) => (
             <div
               key={user.id}
-              className="grid grid-cols-[1fr_1fr_150px_100px_140px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+              className="grid grid-cols-[1fr_1fr_150px_100px_140px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50 min-w-[700px]"
             >
               <div className="font-mono text-sm">{user.username}</div>
               <div className="font-mono text-sm text-muted-foreground">

@@ -29,6 +29,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { t } = useI18n();
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -66,11 +72,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <TaskProvider>
       <div className="flex min-h-screen bg-background">
+        {/* Mobile overlay */}
+        {mobileMenuOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
         <aside
-          className={`fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-background transition-all duration-300 ${
-            sidebarCollapsed ? "w-16" : "w-64"
-          }`}
+          className={`fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-border bg-background transition-all duration-300
+            ${sidebarCollapsed ? "w-16" : "w-64"}
+            ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+          `}
         >
           {/* Logo */}
           <div className="group/header relative flex h-16 items-center border-b border-border px-4">
@@ -141,11 +156,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
         {/* Main content */}
         <main
-          className={`flex min-h-screen flex-1 flex-col transition-all duration-300 ${
-            sidebarCollapsed ? "ml-16" : "ml-64"
-          }`}
+          className={`flex min-h-screen flex-1 flex-col transition-all duration-300 ml-0
+            ${sidebarCollapsed ? "md:ml-16" : "md:ml-64"}
+          `}
         >
-          <DashboardHeader user={headerUser} onLogout={handleLogout} />
+          <DashboardHeader
+            user={headerUser}
+            onLogout={handleLogout}
+            onMenuClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            mobileMenuOpen={mobileMenuOpen}
+          />
           <div className="flex-1">{children}</div>
         </main>
 
