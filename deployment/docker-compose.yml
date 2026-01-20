@@ -364,10 +364,11 @@ services:
     ports:
       - ${CRAWLER_PORT:-8001}:8001
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
       SUPABASE_URL: http://kong:8000
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      # Webhook for crawl completion notifications
+      NEXTJS_WEBHOOK_URL: http://nextjs:3000/api/webhook/crawl
     depends_on:
       redis:
         condition: service_healthy
