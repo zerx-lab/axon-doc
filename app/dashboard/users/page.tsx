@@ -361,7 +361,7 @@ export default function UsersPage() {
       </div>
 
       {/* Users Table */}
-      <div className="border border-border overflow-x-auto">
+      <div className="border border-border overflow-x-auto w-full">
         <div className="min-w-[500px]">
         {/* Table Header */}
         <div className="grid grid-cols-[1fr_1fr_100px_80px_100px] gap-4 border-b border-border bg-card px-4 py-3">

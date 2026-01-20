@@ -349,7 +349,7 @@ export default function KnowledgeBasesPage() {
         />
       </div>
 
-      <div className="border border-border overflow-x-auto">
+      <div className="border border-border overflow-x-auto w-full">
         <div className="min-w-[700px]">
         <div className="grid grid-cols-[1fr_2fr_80px_100px_100px_100px] gap-4 border-b border-border bg-card px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
