@@ -662,7 +662,7 @@ export default function DocumentsPage() {
   ).length;
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 w-full min-w-0 overflow-hidden">
       <div className="mb-6 md:mb-8">
         <button
           onClick={handleBack}
@@ -762,8 +762,9 @@ export default function DocumentsPage() {
 
       {activeTab === "documents" ? (
         <>
-          <div className="border border-border overflow-x-auto">
-            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3">
+          <div className="border border-border overflow-x-auto w-full">
+            <div className="min-w-[900px]">
+            <div className="grid grid-cols-[40px_2fr_1fr_80px_80px_100px_100px_140px] gap-4 border-b border-border bg-card px-4 py-3">
             {canDeleteDoc && (
               <div className="flex items-center justify-center">
                 <input
@@ -775,25 +776,25 @@ export default function DocumentsPage() {
               </div>
             )}
             {!canDeleteDoc && <div />}
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("docs.docTitle")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("docs.sourceUrl")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("docs.wordCount")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("docs.status")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("embedding.status")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("common.createdAt")}
             </div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
               {t("common.actions")}
             </div>
           </div>
@@ -810,7 +811,7 @@ export default function DocumentsPage() {
             documents.map((doc) => (
             <div
               key={doc.id}
-              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+              className="grid grid-cols-[40px_2fr_1fr_80px_80px_100px_100px_140px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
             >
               <div className="flex items-center justify-center">
                 {canDeleteDoc && (
@@ -944,8 +945,9 @@ export default function DocumentsPage() {
             </div>
           ))
         )}
-        </div>
-        
+            </div>
+          </div>
+
         {totalPages > 1 && (
           <div className="mt-4 flex items-center justify-between border border-border bg-card px-4 py-3">
             <div className="font-mono text-xs text-muted-foreground">
