@@ -333,7 +333,7 @@ export default function UsersPage() {
   const roleOptions = roles.map((role) => ({ value: role.id, label: role.name }));
 
   return (
-    <div className="p-4 md:p-8 overflow-hidden">
+    <div className="p-4 md:p-8 max-w-full overflow-hidden">
       {/* Header */}
       <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
