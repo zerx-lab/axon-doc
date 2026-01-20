@@ -2,14 +2,19 @@
 
 import json
 import logging
+import re
 from typing import Any
 
-from litellm import completion
+from litellm import completion, get_model_info
 
 from app.models import AnalysisResult, SiteConfig, FRAMEWORK_PRESETS
 from app.settings_loader import LLMSettings
 
 logger = logging.getLogger(__name__)
+
+# Conservative token-to-char ratios for different content types
+# Chinese text uses more tokens per character than English
+TOKEN_CHAR_RATIO_CONSERVATIVE = 2.5  # ~2.5 chars per token for mixed content
 
 SYSTEM_PROMPT = """You are a web page structure analysis expert. Your task is to analyze HTML and identify the main content area and elements to exclude.
 
@@ -77,6 +82,44 @@ class PageAnalyzer:
         self._api_base = llm_settings.base_url or None
         self._temperature = llm_settings.temperature
         self._max_tokens = llm_settings.max_tokens
+        self._max_input_tokens = self._get_model_max_input_tokens()
+
+    def _get_model_max_input_tokens(self) -> int:
+        """Get max input tokens for the model, with fallback defaults."""
+        default_limit = 8000  # Conservative default
+        try:
+            # litellm model format: "provider/model" or just "model"
+            model_name = self._model
+            info = get_model_info(model_name)
+            max_input = info.get("max_input_tokens") or info.get("max_tokens")
+            if max_input is not None:
+                logger.info(f"Model {model_name} max_input_tokens: {max_input}")
+                return int(max_input)
+            logger.warning(
+                f"No token limit found for {model_name}, using default {default_limit}"
+            )
+            return default_limit
+        except Exception as e:
+            logger.warning(
+                f"Could not get model info for {self._model}: {e}, using default {default_limit}"
+            )
+            return default_limit
+
+    def _calculate_max_html_chars(self) -> int:
+        """Calculate max HTML chars based on model's token limit.
+
+        Reserve tokens for:
+        - System prompt: ~800 tokens
+        - User prompt template: ~200 tokens
+        - Response: max_tokens (usually 2000)
+        - Safety margin: 10%
+        """
+        reserved_tokens = 800 + 200 + self._max_tokens
+        available_tokens = int((self._max_input_tokens - reserved_tokens) * 0.9)
+        # Convert tokens to chars using conservative ratio
+        max_chars = int(available_tokens * TOKEN_CHAR_RATIO_CONSERVATIVE)
+        # Clamp to reasonable range
+        return max(5000, min(max_chars, 100000))
 
     async def analyze(
         self,
@@ -86,7 +129,11 @@ class PageAnalyzer:
         if not self._api_key:
             return self._fallback_analysis(html)
 
-        truncated_html = self._truncate_html(html, max_chars=25000)
+        max_chars = self._calculate_max_html_chars()
+        truncated_html = self._truncate_html(html, max_chars=max_chars)
+        logger.info(
+            f"HTML truncated to {len(truncated_html)} chars (max: {max_chars}, model limit: {self._max_input_tokens} tokens)"
+        )
         effective_prompt = (
             user_prompt
             or "Extract main document content, excluding navigation, sidebar, footer, and other non-content elements"
@@ -113,7 +160,8 @@ class PageAnalyzer:
         if not self._api_key:
             return self._fallback_analysis(html)
 
-        truncated_html = self._truncate_html(html, max_chars=25000)
+        max_chars = self._calculate_max_html_chars()
+        truncated_html = self._truncate_html(html, max_chars=max_chars)
 
         user_message = REANALYSIS_USER_PROMPT.format(
             failure_reason=failure_reason,
@@ -223,18 +271,53 @@ class PageAnalyzer:
         )
 
     @staticmethod
-    def _truncate_html(html: str, max_chars: int = 25000) -> str:
-        if len(html) <= max_chars:
-            return html
+    def _truncate_html(html: str, max_chars: int = 12000) -> str:
+        """Truncate HTML to fit within LLM token limits.
 
-        head_end = html.lower().find("</head>")
+        Uses 12000 chars as default (~4000-6000 tokens for mixed content).
+        This leaves room for system prompt and response within 30K token limit.
+        """
+        # First, clean up the HTML to remove noise
+        cleaned = html
+
+        # Remove script and style content (keep tags for structure analysis)
+        cleaned = re.sub(
+            r"<script[^>]*>[\s\S]*?</script>",
+            "<script></script>",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<style[^>]*>[\s\S]*?</style>",
+            "<style></style>",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove comments
+        cleaned = re.sub(r"<!--[\s\S]*?-->", "", cleaned)
+
+        # Remove inline styles and data attributes (keep class for framework detection)
+        cleaned = re.sub(r'\s+style="[^"]*"', "", cleaned)
+        cleaned = re.sub(r'\s+data-[a-z-]+="[^"]*"', "", cleaned, flags=re.IGNORECASE)
+
+        # Collapse multiple whitespaces
+        cleaned = re.sub(r"\s+", " ", cleaned)
+
+        if len(cleaned) <= max_chars:
+            return cleaned
+
+        # Try to preserve head and beginning of body
+        head_end = cleaned.lower().find("</head>")
         if head_end != -1:
-            head_portion = html[: head_end + 7]
-            body_start = html.lower().find("<body", head_end)
+            head_portion = cleaned[: head_end + 7]
+            body_start = cleaned.lower().find("<body", head_end)
             if body_start != -1:
-                body_content = html[body_start:]
-                if len(body_content) > max_chars - len(head_portion):
-                    body_content = body_content[: max_chars - len(head_portion)]
-                return head_portion + body_content
+                remaining = (
+                    max_chars - len(head_portion) - 100
+                )  # Reserve for truncation notice
+                if remaining > 0:
+                    body_content = cleaned[body_start : body_start + remaining]
+                    return head_portion + body_content + "\n<!-- content truncated -->"
 
-        return html[:max_chars]
+        return cleaned[:max_chars] + "\n<!-- content truncated -->"
