@@ -7,6 +7,30 @@ import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 
+function calculateCrawlETA(job: CrawlJob): string {
+  if (job.pages_crawled === 0 || job.total_pages === 0) return "";
+  const remaining = job.total_pages - job.pages_crawled;
+  const createdAt = new Date(job.created_at).getTime();
+  const elapsed = (Date.now() - createdAt) / 1000;
+  const rate = job.pages_crawled / elapsed;
+  if (rate <= 0) return "";
+  const eta = Math.ceil(remaining / rate);
+  if (eta < 60) return `${eta}s`;
+  if (eta < 3600) return `${Math.ceil(eta / 60)}m`;
+  const hours = Math.floor(eta / 3600);
+  const mins = Math.ceil((eta % 3600) / 60);
+  return `${hours}h ${mins}m`;
+}
+
+function ClockIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
 interface CrawlJobListProps {
   readonly kbId: string;
   readonly onRefreshDocuments?: () => void;
@@ -297,14 +321,28 @@ export function CrawlJobList({ kbId, onRefreshDocuments }: CrawlJobListProps) {
               {/* Progress Bar (for running jobs) */}
               {job.status === "running" && (
                 <div className="mb-3">
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono mb-1">
-                    <span>{t("crawl.progress")}</span>
-                    <span>{Math.round(job.progress)}%</span>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">{Math.round(job.progress)}%</span>
+                      <span>{job.pages_crawled}/{job.total_pages} {t("crawl.pagesCrawled").toLowerCase()}</span>
+                    </div>
+                    {job.pages_crawled > 0 && (
+                      <div className="flex items-center gap-1">
+                        <ClockIcon className="h-2.5 w-2.5" />
+                        <span>
+                          {calculateCrawlETA(job)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div className="h-1 bg-border overflow-hidden">
+                  <div className="relative h-1.5 bg-card overflow-hidden rounded-full">
                     <div
-                      className="h-full bg-blue-500 transition-all duration-300"
-                      style={{ width: `${job.progress}%` }}
+                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300"
+                      style={{ width: `${Math.max(job.progress, 2)}%` }}
+                    />
+                    <div 
+                      className="absolute inset-y-0 left-0 animate-shimmer rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                      style={{ width: `${Math.max(job.progress, 2)}%` }}
                     />
                   </div>
                 </div>

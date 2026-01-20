@@ -568,6 +568,13 @@ const translations: Translations = {
   "task.taskType": { zh: "任务类型", en: "Task Type" },
   "task.createdTime": { zh: "创建时间", en: "Created Time" },
   "task.duration": { zh: "耗时", en: "Duration" },
+  "task.minimize": { zh: "最小化", en: "Minimize" },
+  "task.retry": { zh: "重试", en: "Retry" },
+  "task.eta": { zh: "预计剩余", en: "ETA" },
+  "task.speed": { zh: "速度", en: "Speed" },
+  "task.progress": { zh: "进度", en: "Progress" },
+  "task.retrying": { zh: "重试中...", en: "Retrying..." },
+  "task.retryCount": { zh: "重试次数", en: "Retry count" },
 
   // Web Crawl
   "crawl.title": { zh: "网页爬取", en: "Web Crawl" },

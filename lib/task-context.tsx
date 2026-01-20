@@ -34,6 +34,17 @@ export interface TaskData {
   [key: string]: unknown;
 }
 
+export interface TaskProgress {
+  current: number;
+  total: number;
+  speed: number;
+  eta: number;
+  startTime: number;
+  lastUpdateTime: number;
+  retryCount: number;
+  maxRetries: number;
+}
+
 export interface Task {
   id: string;
   type: TaskType;
@@ -41,6 +52,7 @@ export interface Task {
   title: string;
   description?: string;
   progress: number;
+  progressData?: TaskProgress;
   error?: string;
   createdAt: number;
   startedAt?: number;
@@ -52,56 +64,102 @@ interface TaskContextType {
   tasks: Task[];
   pendingCount: number;
   runningCount: number;
+  completedCount: number;
+  failedCount: number;
   addTask: (task: Omit<Task, "id" | "createdAt" | "status" | "progress">) => string;
   removeTask: (taskId: string) => void;
   clearCompletedTasks: () => void;
   clearAllTasks: () => void;
   cancelTask: (taskId: string) => void;
+  retryTask: (taskId: string) => void;
   getTask: (taskId: string) => Task | undefined;
   isTaskPanelOpen: boolean;
   setTaskPanelOpen: (open: boolean) => void;
+  updateTaskProgress: (taskId: string, progress: Partial<TaskProgress>) => void;
 }
 
 const TaskContext = createContext<TaskContextType | null>(null);
 
 const STORAGE_KEY = "axon_tasks";
 const MAX_COMPLETED_TASKS = 50;
-const POLL_INTERVAL = 2000;
+
+// Exponential backoff configuration
+const POLL_CONFIG = {
+  initialInterval: 1000,
+  maxInterval: 15000,
+  backoffFactor: 1.5,
+  jitterFactor: 0.1,
+};
+
+// Retry configuration
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  retryDelay: 2000,
+  retryBackoffFactor: 2,
+};
 
 type EmbeddingStatus = "pending" | "processing" | "completed" | "failed" | "outdated";
+
+interface EmbeddingStatusResponse {
+  status: EmbeddingStatus;
+  chunkCount?: number;
+  processedChunks?: number;
+}
 
 async function checkDocumentEmbeddingStatus(
   docId: string,
   operatorId: string
-): Promise<EmbeddingStatus | null> {
+): Promise<EmbeddingStatusResponse | null> {
   try {
     const params = new URLSearchParams({ operatorId, docId });
     const response = await fetch(`/api/embeddings?${params}`);
     if (!response.ok) return null;
     const result = await response.json();
-    return result.document?.embeddingStatus || null;
+    return {
+      status: result.document?.embeddingStatus || "pending",
+      chunkCount: result.document?.chunkCount || 0,
+    };
   } catch {
     return null;
   }
 }
 
+interface KBEmbeddingStatusResponse {
+  hasPendingOrProcessing: boolean;
+  allCompleted: boolean;
+  total: number;
+  embedded: number;
+  pending: number;
+  failed: number;
+}
+
 async function checkKnowledgeBaseEmbeddingStatus(
   kbId: string,
   operatorId: string
-): Promise<{ hasPendingOrProcessing: boolean; allCompleted: boolean }> {
+): Promise<KBEmbeddingStatusResponse> {
   try {
     const params = new URLSearchParams({ operatorId, kbId });
     const response = await fetch(`/api/embeddings?${params}`);
-    if (!response.ok) return { hasPendingOrProcessing: false, allCompleted: false };
+    if (!response.ok) {
+      return { hasPendingOrProcessing: false, allCompleted: false, total: 0, embedded: 0, pending: 0, failed: 0 };
+    }
     const result = await response.json();
     const stats = result.stats;
-    if (!stats) return { hasPendingOrProcessing: false, allCompleted: false };
-    // pending_documents includes both 'pending' and 'processing' status documents
+    if (!stats) {
+      return { hasPendingOrProcessing: false, allCompleted: false, total: 0, embedded: 0, pending: 0, failed: 0 };
+    }
     const hasPendingOrProcessing = stats.pending_documents > 0;
     const allCompleted = stats.embedded_documents === stats.total_documents && stats.total_documents > 0;
-    return { hasPendingOrProcessing, allCompleted };
+    return {
+      hasPendingOrProcessing,
+      allCompleted,
+      total: stats.total_documents || 0,
+      embedded: stats.embedded_documents || 0,
+      pending: stats.pending_documents || 0,
+      failed: stats.failed_documents || 0,
+    };
   } catch {
-    return { hasPendingOrProcessing: false, allCompleted: false };
+    return { hasPendingOrProcessing: false, allCompleted: false, total: 0, embedded: 0, pending: 0, failed: 0 };
   }
 }
 
@@ -133,6 +191,40 @@ function saveTasksToStorage(tasks: Task[]): void {
   localStorage.setItem(STORAGE_KEY, serializeTasks(tasks));
 }
 
+function calculateETA(progress: TaskProgress): number {
+  if (progress.speed <= 0 || progress.current >= progress.total) return 0;
+  const remaining = progress.total - progress.current;
+  return Math.ceil(remaining / progress.speed);
+}
+
+function calculateSpeed(progress: TaskProgress): number {
+  const elapsed = (progress.lastUpdateTime - progress.startTime) / 1000;
+  if (elapsed <= 0) return 0;
+  return progress.current / elapsed;
+}
+
+function getNextPollInterval(currentInterval: number): number {
+  const nextInterval = Math.min(
+    currentInterval * POLL_CONFIG.backoffFactor,
+    POLL_CONFIG.maxInterval
+  );
+  const jitter = nextInterval * POLL_CONFIG.jitterFactor * (Math.random() - 0.5);
+  return Math.round(nextInterval + jitter);
+}
+
+function getRetryDelay(retryCount: number): number {
+  return RETRY_CONFIG.retryDelay * Math.pow(RETRY_CONFIG.retryBackoffFactor, retryCount);
+}
+
+function formatETA(seconds: number): string {
+  if (seconds <= 0) return "";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.ceil((seconds % 3600) / 60);
+  return `${hours}h ${mins}m`;
+}
+
 interface TaskProviderProps {
   readonly children: ReactNode;
 }
@@ -152,26 +244,26 @@ export function TaskProvider({ children }: TaskProviderProps) {
       for (const task of storedTasks) {
         if (task.status === "running") {
           if (task.type === "embed_document" && task.data.docId) {
-            const status = await checkDocumentEmbeddingStatus(
+            const result = await checkDocumentEmbeddingStatus(
               task.data.docId,
               task.data.operatorId
             );
             
-            if (status === "completed") {
+            if (result?.status === "completed") {
               restoredTasks.push({
                 ...task,
                 status: "completed",
                 progress: 100,
                 completedAt: Date.now(),
               });
-            } else if (status === "failed") {
+            } else if (result?.status === "failed") {
               restoredTasks.push({
                 ...task,
                 status: "failed",
                 error: "Embedding failed on server",
                 completedAt: Date.now(),
               });
-            } else if (status === "processing") {
+            } else if (result?.status === "processing") {
               restoredTasks.push({ ...task, status: "pending" as TaskStatus });
             } else {
               restoredTasks.push({
@@ -241,15 +333,30 @@ export function TaskProvider({ children }: TaskProviderProps) {
     const abortController = new AbortController();
     abortControllersRef.current.set(nextTask.id, abortController);
 
+    const now = Date.now();
     setTasks((prev) =>
       prev.map((t) =>
         t.id === nextTask.id
-          ? { ...t, status: "running" as TaskStatus, startedAt: Date.now() }
+          ? {
+              ...t,
+              status: "running" as TaskStatus,
+              startedAt: now,
+              progressData: {
+                current: 0,
+                total: 100,
+                speed: 0,
+                eta: 0,
+                startTime: now,
+                lastUpdateTime: now,
+                retryCount: 0,
+                maxRetries: RETRY_CONFIG.maxRetries,
+              },
+            }
           : t
       )
     );
 
-    executeTask(nextTask, abortController.signal)
+    executeTaskWithRetry(nextTask, abortController.signal, 0)
       .then((result) => {
         setTasks((prev) =>
           prev.map((t) =>
@@ -298,9 +405,41 @@ export function TaskProvider({ children }: TaskProviderProps) {
       );
       const toRemove = sortedCompleted.slice(MAX_COMPLETED_TASKS);
       const toRemoveIds = new Set(toRemove.map((t) => t.id));
-      setTasks((prev) => prev.filter((t) => !toRemoveIds.has(t.id)));
+      // Use requestAnimationFrame to avoid synchronous setState in effect
+      requestAnimationFrame(() => {
+        setTasks((prev) => prev.filter((t) => !toRemoveIds.has(t.id)));
+      });
     }
   }, [tasks]);
+
+  const updateTaskProgress = useCallback((taskId: string, progressUpdate: Partial<TaskProgress>) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const currentProgress = t.progressData || {
+          current: 0,
+          total: 100,
+          speed: 0,
+          eta: 0,
+          startTime: Date.now(),
+          lastUpdateTime: Date.now(),
+          retryCount: 0,
+          maxRetries: RETRY_CONFIG.maxRetries,
+        };
+        const updatedProgress = { ...currentProgress, ...progressUpdate, lastUpdateTime: Date.now() };
+        updatedProgress.speed = calculateSpeed(updatedProgress);
+        updatedProgress.eta = calculateETA(updatedProgress);
+        const percentProgress = updatedProgress.total > 0
+          ? Math.round((updatedProgress.current / updatedProgress.total) * 100)
+          : 0;
+        return {
+          ...t,
+          progress: percentProgress,
+          progressData: updatedProgress,
+        };
+      })
+    );
+  }, []);
 
   const addTask = useCallback(
     (taskData: Omit<Task, "id" | "createdAt" | "status" | "progress">): string => {
@@ -357,6 +496,23 @@ export function TaskProvider({ children }: TaskProviderProps) {
     processingRef.current.delete(taskId);
   }, []);
 
+  const retryTask = useCallback((taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId && t.status === "failed"
+          ? {
+              ...t,
+              status: "pending" as TaskStatus,
+              error: undefined,
+              progress: 0,
+              progressData: undefined,
+              completedAt: undefined,
+            }
+          : t
+      )
+    );
+  }, []);
+
   const getTask = useCallback(
     (taskId: string): Task | undefined => {
       return tasks.find((t) => t.id === taskId);
@@ -366,6 +522,8 @@ export function TaskProvider({ children }: TaskProviderProps) {
 
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
   const runningCount = tasks.filter((t) => t.status === "running").length;
+  const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const failedCount = tasks.filter((t) => t.status === "failed").length;
 
   return (
     <TaskContext.Provider
@@ -373,14 +531,18 @@ export function TaskProvider({ children }: TaskProviderProps) {
         tasks,
         pendingCount,
         runningCount,
+        completedCount,
+        failedCount,
         addTask,
         removeTask,
         clearCompletedTasks,
         clearAllTasks,
         cancelTask,
+        retryTask,
         getTask,
         isTaskPanelOpen,
         setTaskPanelOpen,
+        updateTaskProgress,
       }}
     >
       {children}
@@ -394,6 +556,59 @@ export function useTask() {
     throw new Error("useTask must be used within TaskProvider");
   }
   return context;
+}
+
+export { formatETA };
+
+async function executeTaskWithRetry(
+  task: Task,
+  signal: AbortSignal,
+  retryCount: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const result = await executeTask(task, signal);
+    if (!result.success && retryCount < RETRY_CONFIG.maxRetries) {
+      const shouldRetry = isRetryableError(result.error);
+      if (shouldRetry) {
+        const delay = getRetryDelay(retryCount);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        return executeTaskWithRetry(task, signal, retryCount + 1);
+      }
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+    if (retryCount < RETRY_CONFIG.maxRetries) {
+      const delay = getRetryDelay(retryCount);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      return executeTaskWithRetry(task, signal, retryCount + 1);
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+function isRetryableError(error?: string): boolean {
+  if (!error) return true;
+  const nonRetryablePatterns = [
+    "permission denied",
+    "not found",
+    "invalid",
+    "unauthorized",
+    "forbidden",
+  ];
+  const lowerError = error.toLowerCase();
+  return !nonRetryablePatterns.some((pattern) => lowerError.includes(pattern));
 }
 
 async function executeTask(
@@ -422,9 +637,9 @@ async function executeEmbedDocument(
   }
 
   try {
-    const currentStatus = await checkDocumentEmbeddingStatus(docId, operatorId);
+    const currentResult = await checkDocumentEmbeddingStatus(docId, operatorId);
     
-    if (currentStatus !== "processing") {
+    if (currentResult?.status !== "processing") {
       const response = await fetch("/api/embeddings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -442,26 +657,30 @@ async function executeEmbedDocument(
       }
     }
 
+    let pollInterval = POLL_CONFIG.initialInterval;
+    
     while (!signal.aborted) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
       
       if (signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
 
-      const status = await checkDocumentEmbeddingStatus(docId, operatorId);
+      const statusResult = await checkDocumentEmbeddingStatus(docId, operatorId);
       
-      if (status === "completed") {
+      if (statusResult?.status === "completed") {
         return { success: true };
       }
       
-      if (status === "failed") {
+      if (statusResult?.status === "failed") {
         return { success: false, error: "Embedding failed on server" };
       }
       
-      if (status === "pending" || status === "outdated") {
+      if (statusResult?.status === "pending" || statusResult?.status === "outdated") {
         return { success: false, error: "Embedding was interrupted" };
       }
+
+      pollInterval = getNextPollInterval(pollInterval);
     }
 
     throw new DOMException("Aborted", "AbortError");
@@ -502,8 +721,10 @@ async function executeEmbedKnowledgeBase(
       return { success: false, error: result.error || "Batch embedding failed" };
     }
 
+    let pollInterval = POLL_CONFIG.initialInterval;
+
     while (!signal.aborted) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
       
       if (signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
@@ -518,6 +739,8 @@ async function executeEmbedKnowledgeBase(
       if (!status.hasPendingOrProcessing && !status.allCompleted) {
         return { success: true };
       }
+
+      pollInterval = getNextPollInterval(pollInterval);
     }
 
     throw new DOMException("Aborted", "AbortError");
@@ -534,9 +757,15 @@ async function executeEmbedKnowledgeBase(
 
 type CrawlJobStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
-async function checkCrawlJobStatus(
-  jobId: string
-): Promise<{ status: CrawlJobStatus; error?: string } | null> {
+interface CrawlJobStatusResponse {
+  status: CrawlJobStatus;
+  error?: string;
+  pagesCrawled?: number;
+  totalPages?: number;
+  progress?: number;
+}
+
+async function checkCrawlJobStatus(jobId: string): Promise<CrawlJobStatusResponse | null> {
   try {
     const response = await fetch(`/api/crawl?job_id=${jobId}`);
     if (!response.ok) return null;
@@ -544,6 +773,9 @@ async function checkCrawlJobStatus(
     return {
       status: result.job?.status || "pending",
       error: result.job?.error,
+      pagesCrawled: result.job?.pages_crawled,
+      totalPages: result.job?.total_pages,
+      progress: result.job?.progress,
     };
   } catch {
     return null;
@@ -608,8 +840,10 @@ async function executeCrawlWebpage(
       return { success: true };
     }
 
+    let pollInterval = POLL_CONFIG.initialInterval;
+
     while (!signal.aborted) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
       
       if (signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
@@ -617,7 +851,10 @@ async function executeCrawlWebpage(
 
       const status = await checkCrawlJobStatus(jobId);
       
-      if (!status) continue;
+      if (!status) {
+        pollInterval = getNextPollInterval(pollInterval);
+        continue;
+      }
 
       if (status.status === "completed") {
         return { success: true };
@@ -630,6 +867,8 @@ async function executeCrawlWebpage(
       if (status.status === "cancelled") {
         return { success: false, error: "Crawl was cancelled" };
       }
+
+      pollInterval = getNextPollInterval(pollInterval);
     }
 
     throw new DOMException("Aborted", "AbortError");

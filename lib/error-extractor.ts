@@ -49,7 +49,7 @@ export function extractDetailedError(error: unknown): ExtractedError {
     
     let message = ensureString(error.message);
     let code = errorObj.constructor?.name as string || "Error";
-    let statusCode = errorObj.statusCode as number | undefined;
+    const statusCode = errorObj.statusCode as number | undefined;
     let details: string | undefined;
 
     if (typeof errorObj.responseBody === "string") {

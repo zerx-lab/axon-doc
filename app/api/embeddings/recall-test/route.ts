@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Permission denied" }, { status: 403 });
     }
 
-    let effectiveConfig = { ...config };
+    const effectiveConfig = { ...config };
     if (!config.apiKey || config.apiKey === "********") {
       const { data: savedConfig } = await supabase
         .from("system_settings")

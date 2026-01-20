@@ -161,6 +161,10 @@ async function createDocument(
     .single()
 
   if (error) return errorResponse(error.message, 400)
+
+  // Update document count in knowledge base
+  await supabase.rpc('increment_document_count', { kb_id_param: body.kb_id })
+
   return successResponse(data, 201)
 }
 
@@ -211,7 +215,7 @@ async function deleteDocument(
 ) {
   const { data: doc, error: fetchError } = await supabase
     .from('documents')
-    .select('file_path')
+    .select('file_path, kb_id')
     .eq('id', id)
     .single()
 
@@ -227,5 +231,9 @@ async function deleteDocument(
     .eq('id', id)
 
   if (error) return errorResponse(error.message, 400)
+
+  // Update document count in knowledge base
+  await supabase.rpc('decrement_document_count', { kb_id_param: doc.kb_id })
+
   return successResponse({ success: true })
 }

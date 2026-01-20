@@ -567,7 +567,40 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      increment_document_count: {
+        Args: { kb_id_param: string };
+        Returns: void;
+      };
+      decrement_document_count: {
+        Args: { kb_id_param: string };
+        Returns: void;
+      };
+      match_document_chunks: {
+        Args: {
+          query_embedding: number[];
+          match_count: number;
+          match_threshold: number;
+          filter_kb_id?: string;
+        };
+        Returns: Array<{
+          chunk_id: string;
+          document_id: string;
+          document_title: string;
+          document_source_url: string | null;
+          chunk_content: string;
+          chunk_context: string | null;
+          chunk_index: number;
+          similarity: number;
+        }>;
+      };
+      bm25_search_chunks: {
+        Args: {
+          query_text: string;
+          filter_kb_id?: string;
+          match_count?: number;
+        };
+        Returns: BM25SearchRawResult[];
+      };
     };
     Enums: {
       [_ in never]: never;

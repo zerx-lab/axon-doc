@@ -364,7 +364,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .eq("id", assistantMessage.id);
 
      const model = createProvider(chatConfig);
-     let streamError: Error | null = null;
+     const streamError: Error | null = null;
 
      let capturedError: unknown = null;
      

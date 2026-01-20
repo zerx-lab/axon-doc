@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const { limit, page, offset } = validatePagination(
       searchParams.get("limit"),
       searchParams.get("page"),
-      { maxLimit: 100, defaultLimit: 20 }
+      { maxLimit: 100, defaultLimit: 100 }
     );
 
     if (!operatorId) {

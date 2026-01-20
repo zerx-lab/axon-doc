@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
             chunk_id: r.chunk.chunk_id,
             document_id: r.chunk.document_id,
             document_title: r.chunk.document_title,
+            document_source_url: r.chunk.document_source_url,
             chunk_content: r.chunk.chunk_content,
             chunk_context: r.chunk.chunk_context,
             chunk_index: r.chunk.chunk_index,
