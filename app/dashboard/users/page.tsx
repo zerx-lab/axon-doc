@@ -333,7 +333,7 @@ export default function UsersPage() {
   const roleOptions = roles.map((role) => ({ value: role.id, label: role.name }));
 
   return (
-    <div className="p-4 md:p-8 overflow-hidden">
+    <div className="p-4 md:p-8 w-full min-w-0 overflow-hidden">
       {/* Header */}
       <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -361,23 +361,23 @@ export default function UsersPage() {
       </div>
 
       {/* Users Table */}
-      <div className="border border-border overflow-x-auto">
-        <div className="min-w-[600px]">
+      <div className="border border-border overflow-x-auto w-full">
+        <div className="min-w-[500px]">
         {/* Table Header */}
-        <div className="grid grid-cols-[1fr_1fr_120px_80px_120px] gap-4 border-b border-border bg-card px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        <div className="grid grid-cols-[1fr_1fr_100px_80px_100px] gap-4 border-b border-border bg-card px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
             {t("users.username")}
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
             {t("users.displayName")}
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
             {t("users.role")}
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
             {t("common.status")}
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground whitespace-nowrap">
             {t("common.actions")}
           </div>
         </div>
@@ -395,7 +395,7 @@ export default function UsersPage() {
           users.map((user) => (
             <div
               key={user.id}
-              className="grid grid-cols-[1fr_1fr_120px_80px_120px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+              className="grid grid-cols-[1fr_1fr_100px_80px_100px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
             >
               <div className="font-mono text-sm">{user.username}</div>
               <div className="font-mono text-sm text-muted-foreground">
