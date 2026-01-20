@@ -16,13 +16,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RecursiveCharacterSplitter, computeContentHash } from "@/lib/chunking";
 import { ContextGenerator } from "@/lib/chunking";
 
+const PROVIDER_BATCH_SIZE_LIMITS: Record<EmbeddingConfig["provider"], number> = {
+  openai: 2048,
+  azure: 2048,
+  local: 100,
+  aliyun: 10,
+};
+
 const DEFAULT_EMBEDDING_CONFIG: EmbeddingConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
   model: "text-embedding-3-small",
   dimensions: 0,
-  batchSize: 100,
+  batchSize: 0,
   chunkSize: 400,
   chunkOverlap: 60,
   contextEnabled: false,
@@ -160,7 +167,10 @@ export async function generateEmbeddings(
     throw new Error("API key is not configured. Please set it in Settings > Embedding Model Configuration.");
   }
 
-  const batchSize = config.batchSize || 100;
+  const isAliyunCompatMode = config.baseUrl.includes("dashscope");
+  const effectiveProvider = isAliyunCompatMode ? "aliyun" : config.provider;
+  const providerLimit = PROVIDER_BATCH_SIZE_LIMITS[effectiveProvider] || 10;
+  const batchSize = config.batchSize ? Math.min(config.batchSize, providerLimit) : providerLimit;
   const allEmbeddings: number[][] = [];
 
   const useAliyunNativeAPI = config.provider === "aliyun" && 
