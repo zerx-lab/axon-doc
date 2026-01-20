@@ -85,7 +85,7 @@ export default function TasksPage() {
       </div>
 
       <div className="border border-border overflow-x-auto">
-        <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border bg-card px-4 py-3 min-w-[800px]">
+        <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border bg-card px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {t("task.taskName")}
           </div>
@@ -145,7 +145,7 @@ function TaskRow({ task, getTaskTypeLabel, formatDuration, formatTime, onCancel,
   const canCancel = task.status === "pending" || task.status === "running";
 
   return (
-    <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50 min-w-[800px]">
+    <div className="grid grid-cols-[2fr_1fr_120px_140px_140px_120px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50">
       <div className="min-w-0">
         <div className="truncate font-mono text-sm" title={task.title}>
           {task.title}

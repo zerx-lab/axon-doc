@@ -304,7 +304,7 @@ export default function KBPermissionsPage() {
       {/* Permissions Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-[800px] w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
                 {canManagePermissions && (
