@@ -242,19 +242,19 @@ export default function KBPermissionsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+          <h1 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
             {t("kbPermissions.title")}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
             {t("kbPermissions.description")}
           </p>
         </div>
         {canManagePermissions && (
-          <Button onClick={() => { resetForm(); setShowDialog(true); }}>
+          <Button onClick={() => { resetForm(); setShowDialog(true); }} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             {t("kbPermissions.addPermission")}
           </Button>
@@ -262,7 +262,7 @@ export default function KBPermissionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <Select
           label={t("kbPermissions.filterByRole")}
           value={filterRoleId}
@@ -304,7 +304,7 @@ export default function KBPermissionsPage() {
       {/* Permissions Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <table className="min-w-[800px] w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
                 {canManagePermissions && (

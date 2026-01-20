@@ -662,8 +662,8 @@ export default function DocumentsPage() {
   ).length;
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
+    <div className="p-4 md:p-8">
+      <div className="mb-6 md:mb-8">
         <button
           onClick={handleBack}
           className="mb-4 flex items-center gap-2 font-mono text-sm text-muted-foreground hover:text-foreground"
@@ -671,18 +671,19 @@ export default function DocumentsPage() {
           <ArrowLeftIcon className="h-3.5 w-3.5" />
           {t("common.back")}
         </button>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="font-mono text-xl font-medium">{knowledgeBase?.name || t("docs.title")}</h1>
+            <h1 className="font-mono text-lg md:text-xl font-medium">{knowledgeBase?.name || t("docs.title")}</h1>
             <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               {documents.length} {t("docs.document").toLowerCase()}(s)
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="secondary" 
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
               onClick={() => fetchDocuments(currentPage)}
               disabled={loading}
+              className="flex-1 sm:flex-none"
             >
               <RefreshIcon className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : ""}`} />
               {t("common.refresh")}
@@ -692,6 +693,7 @@ export default function DocumentsPage() {
                 variant="secondary"
                 onClick={handleBatchEmbed}
                 disabled={batchEmbedLoading}
+                className="flex-1 sm:flex-none"
               >
                 {batchEmbedLoading ? (
                   <SpinnerIcon className="mr-2 h-3 w-3 animate-spin" />
@@ -703,11 +705,11 @@ export default function DocumentsPage() {
             )}
             {canCreateDoc && (
               <>
-                <Button variant="secondary" onClick={() => setCrawlDialogOpen(true)}>
+                <Button variant="secondary" onClick={() => setCrawlDialogOpen(true)} className="flex-1 sm:flex-none">
                   <GlobeIcon className="mr-2 h-3 w-3" />
                   {t("crawl.crawlWebpage")}
                 </Button>
-                <Button onClick={openCreateDialog}>
+                <Button onClick={openCreateDialog} className="flex-1 sm:flex-none">
                   <PlusIcon className="mr-2 h-3 w-3" />
                   {t("docs.create")}
                 </Button>
@@ -717,11 +719,11 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      <div className="mb-6 flex items-center gap-4">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="flex border border-border">
           <button
             onClick={() => setActiveTab("documents")}
-            className={`px-4 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${
+            className={`px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors sm:px-4 ${
               activeTab === "documents"
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground"
@@ -731,7 +733,7 @@ export default function DocumentsPage() {
           </button>
           <button
             onClick={() => setActiveTab("crawl")}
-            className={`px-4 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${
+            className={`px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors sm:px-4 ${
               activeTab === "crawl"
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground"
@@ -741,27 +743,27 @@ export default function DocumentsPage() {
           </button>
         </div>
         {activeTab === "documents" && (
-          <>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
             <Input
               placeholder={t("docs.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="max-w-sm"
+              className="w-full sm:w-auto sm:max-w-sm"
             />
             {canDeleteDoc && selectedDocIds.size > 0 && (
-              <Button variant="danger" onClick={openBatchDeleteDialog}>
+              <Button variant="danger" onClick={openBatchDeleteDialog} className="w-full sm:w-auto">
                 <TrashIcon className="mr-2 h-3 w-3" />
                 {t("docs.batchDelete")} ({selectedDocIds.size})
               </Button>
             )}
-          </>
+          </div>
         )}
       </div>
 
       {activeTab === "documents" ? (
         <>
-          <div className="border border-border">
-            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3">
+          <div className="border border-border overflow-x-auto">
+            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3 min-w-[1000px]">
             {canDeleteDoc && (
               <div className="flex items-center justify-center">
                 <input
@@ -808,7 +810,7 @@ export default function DocumentsPage() {
             documents.map((doc) => (
             <div
               key={doc.id}
-              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50 min-w-[1000px]"
             >
               <div className="flex items-center justify-center">
                 {canDeleteDoc && (

@@ -16,9 +16,11 @@ interface User {
 interface DashboardHeaderProps {
   readonly user: User | null;
   readonly onLogout: () => void;
+  readonly onMenuClick?: () => void;
+  readonly mobileMenuOpen?: boolean;
 }
 
-export function DashboardHeader({ user, onLogout }: DashboardHeaderProps) {
+export function DashboardHeader({ user, onLogout, onMenuClick, mobileMenuOpen }: DashboardHeaderProps) {
   const { t, locale, setLocale } = useI18n();
   const { theme, toggleTheme } = useTheme();
   const {
@@ -35,7 +37,7 @@ export function DashboardHeader({ user, onLogout }: DashboardHeaderProps) {
   const langMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const taskMenuRef = useRef<HTMLDivElement>(null);
-  
+
   const activeTaskCount = pendingCount + runningCount;
   const sortedTasks = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
   const hasCompletedTasks = tasks.some(
@@ -59,7 +61,25 @@ export function DashboardHeader({ user, onLogout }: DashboardHeaderProps) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-end gap-2 border-b border-border bg-background/80 px-6 backdrop-blur-sm">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-4 md:px-6 backdrop-blur-sm">
+      {/* Mobile menu button */}
+      {onMenuClick && (
+        <button
+          onClick={onMenuClick}
+          className="flex h-8 w-8 items-center justify-center border border-border text-muted-foreground transition-colors hover:border-foreground hover:text-foreground md:hidden"
+          aria-label="Toggle menu"
+        >
+          {mobileMenuOpen ? (
+            <XIcon className="h-4 w-4" />
+          ) : (
+            <MenuIcon className="h-4 w-4" />
+          )}
+        </button>
+      )}
+
+      {/* Spacer to push items to the right */}
+      <div className="flex-1" />
+
       {/* Task Queue */}
       <div ref={taskMenuRef} className="relative">
         <button
@@ -271,6 +291,14 @@ function XIcon({ className }: { readonly className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function MenuIcon({ className }: { readonly className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 12h18M3 6h18M3 18h18" />
     </svg>
   );
 }

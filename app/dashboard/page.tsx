@@ -25,19 +25,19 @@ export default function DashboardPage() {
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-4 md:p-8">
       {/* Header */}
-      <header className="mb-12 opacity-0 animate-fade-in">
+      <header className="mb-8 md:mb-12 opacity-0 animate-fade-in">
         <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
           {greeting}
         </p>
-        <h1 className="mt-2 font-mono text-2xl font-medium tracking-tight">
+        <h1 className="mt-2 font-mono text-xl md:text-2xl font-medium tracking-tight">
           {user?.display_name || user?.username || t("common.user")}
         </h1>
       </header>
 
       {/* Stats Grid */}
-      <section className="mb-12">
+      <section className="mb-8 md:mb-12">
         <div className="mb-6 flex items-center justify-between opacity-0 animate-fade-in delay-100">
           <h2 className="font-mono text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
             {t("dashboard.overview")}
@@ -52,18 +52,18 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, index) => (
             <div
               key={stat.label}
-              className="group border border-border bg-card p-6 transition-colors hover:border-foreground/20 opacity-0 animate-fade-in"
+              className="group border border-border bg-card p-4 md:p-6 transition-colors hover:border-foreground/20 opacity-0 animate-fade-in"
               style={{ animationDelay: `${150 + index * 50}ms` }}
             >
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 {stat.label}
               </p>
-              <div className="mt-4 flex items-end justify-between">
-                <span className="font-mono text-3xl font-light tracking-tight">
+              <div className="mt-3 md:mt-4 flex items-end justify-between">
+                <span className="font-mono text-2xl md:text-3xl font-light tracking-tight">
                   {stat.value}
                 </span>
                 {stat.change && (
@@ -78,15 +78,15 @@ export default function DashboardPage() {
       </section>
 
       {/* Quick Actions */}
-      <section className="mb-12">
-        <div className="mb-6 flex items-center opacity-0 animate-fade-in delay-300">
+      <section className="mb-8 md:mb-12">
+        <div className="mb-4 md:mb-6 flex items-center opacity-0 animate-fade-in delay-300">
           <h2 className="font-mono text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
             {t("dashboard.quickActions")}
           </h2>
           <div className="h-px flex-1 bg-border mx-4" />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3 opacity-0 animate-fade-in delay-400">
+        <div className="grid gap-3 md:gap-4 sm:grid-cols-2 md:grid-cols-3 opacity-0 animate-fade-in delay-400">
           <ActionCard
             title={t("action.manageUsers")}
             description={t("action.manageUsersDesc")}
@@ -107,7 +107,7 @@ export default function DashboardPage() {
 
       {/* Recent Activity */}
       <section>
-        <div className="mb-6 flex items-center opacity-0 animate-fade-in delay-400">
+        <div className="mb-4 md:mb-6 flex items-center opacity-0 animate-fade-in delay-400">
           <h2 className="font-mono text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
             {t("dashboard.recentActivity")}
           </h2>
@@ -115,12 +115,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="border border-border bg-card opacity-0 animate-fade-in delay-400">
-          <div className="border-b border-border px-6 py-4">
-            <div className="flex items-center gap-4">
-              <div className="h-2 w-2 rounded-full bg-emerald-500" />
-              <div>
+          <div className="border-b border-border px-4 md:px-6 py-3 md:py-4">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+              <div className="min-w-0">
                 <p className="font-mono text-xs">{t("dashboard.sessionStarted")}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">
+                <p className="font-mono text-[10px] text-muted-foreground truncate">
                   {user?.last_login_at
                     ? new Date(user.last_login_at).toLocaleString(dateLocale)
                     : t("dashboard.justNow")}
@@ -128,10 +128,10 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-          <div className="px-6 py-4">
-            <div className="flex items-center gap-4">
-              <div className="h-2 w-2 rounded-full bg-blue-500" />
-              <div>
+          <div className="px-4 md:px-6 py-3 md:py-4">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+              <div className="min-w-0">
                 <p className="font-mono text-xs">{t("dashboard.systemInitialized")}</p>
                 <p className="font-mono text-[10px] text-muted-foreground">
                   {t("dashboard.welcomeToAxonDoc")}
@@ -143,7 +143,7 @@ export default function DashboardPage() {
       </section>
 
       {/* Footer decoration */}
-      <div className="mt-16 flex items-center justify-center opacity-0 animate-fade-in delay-400">
+      <div className="mt-8 md:mt-16 flex items-center justify-center opacity-0 animate-fade-in delay-400">
         <div className="flex items-center gap-4">
           <div className="h-px w-8 bg-border" />
           <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
@@ -166,7 +166,7 @@ function ActionCard({ title, description, href }: ActionCardProps) {
   return (
     <a
       href={href}
-      className="group block border border-border bg-card p-6 transition-all hover:border-foreground/20"
+      className="group block border border-border bg-card p-4 md:p-6 transition-all hover:border-foreground/20"
     >
       <div className="flex items-start justify-between">
         <div>
