@@ -313,7 +313,7 @@ export default function KnowledgeBasesPage() {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-full overflow-hidden">
+    <div className="p-4 md:p-8 w-full min-w-0 overflow-hidden">
       <div className="mb-6 md:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-mono text-lg md:text-xl font-medium">{t("kb.title")}</h1>
