@@ -350,7 +350,8 @@ export default function KnowledgeBasesPage() {
       </div>
 
       <div className="border border-border overflow-x-auto">
-        <div className="grid grid-cols-[2fr_3fr_120px_120px_160px_180px] gap-4 border-b border-border bg-card px-4 py-3">
+        <div className="min-w-[800px]">
+        <div className="grid grid-cols-[1.5fr_2fr_80px_100px_100px_140px] gap-4 border-b border-border bg-card px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             {t("kb.name")}
           </div>
@@ -387,7 +388,7 @@ export default function KnowledgeBasesPage() {
             return (
               <div
                 key={kb.id}
-                className="grid grid-cols-[2fr_3fr_120px_120px_160px_180px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
+                className="grid grid-cols-[1.5fr_2fr_80px_100px_100px_140px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
               >
                 <div className="font-mono text-sm">{kb.name}</div>
                 <div className="font-mono text-sm text-muted-foreground">
@@ -453,6 +454,7 @@ export default function KnowledgeBasesPage() {
             );
           })
         )}
+        </div>
       </div>
 
       <Dialog
