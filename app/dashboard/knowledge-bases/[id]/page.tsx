@@ -763,7 +763,7 @@ export default function DocumentsPage() {
       {activeTab === "documents" ? (
         <>
           <div className="border border-border overflow-x-auto">
-            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3 min-w-[1000px]">
+            <div className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border bg-card px-4 py-3">
             {canDeleteDoc && (
               <div className="flex items-center justify-center">
                 <input
@@ -810,7 +810,7 @@ export default function DocumentsPage() {
             documents.map((doc) => (
             <div
               key={doc.id}
-              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50 min-w-[1000px]"
+              className="grid grid-cols-[40px_1.5fr_minmax(120px,1fr)_100px_100px_140px_140px_200px] gap-4 border-b border-border px-4 py-3 last:border-b-0 hover:bg-card/50"
             >
               <div className="flex items-center justify-center">
                 {canDeleteDoc && (
